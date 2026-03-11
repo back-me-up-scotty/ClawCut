@@ -68,7 +68,7 @@ python -m mlx_lm.server --model [YOUR_MODEL_ID] --host 0.0.0.0 --port 8080
 If the connection is still refused (Error 502/61), your macOS firewall might be blocking the port.
 
 * Go to **`System Settings > Network > Firewall`**.  
-* Either disable it temporarily for testing or click **Options** and ensure that your Python binary (inside your `mlx\_env`) is allowed to receive incoming connections.  
+* Either disable it temporarily for testing or click **Options** and ensure that your Python binary (inside your `mlx_env`) is allowed to receive incoming connections.  
 * **Test connection from Pi:** Run `nc -zv [MAC_IP] 8080\`. It should say "succeeded".
 
 ### **2\. Configure the Proxy (on Raspberry Pi)**
