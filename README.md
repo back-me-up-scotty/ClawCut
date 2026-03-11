@@ -3,6 +3,10 @@
 A high-performance bridge between **OpenClaw** and **Apple Silicon (MLX-LM)**.  
 This proxy allows you to run large language models (like Qwen 2.5) on a Mac mini/MacBook (M1/M2/M3/M4) while maintaining compatibility with the OpenClaw framework running on a Raspberry Pi or other Linux servers.
 
+
+<img width="1021" height="975" alt="Image" src="https://github.com/user-attachments/assets/9810a45d-6697-47a7-9597-c22a59203b4c" />
+
+
 ## **Motivation**
 
 OpenClaw is a powerful framework, but it often sends a massive amount of "JSON Clutter" (system prompts, tool definitions, and metadata) in every request. This often leads to:
@@ -159,4 +163,4 @@ Point your OpenClaw provider to the proxy. If OpenClaw and the Proxy are on the 
     }  
   }
 ```
-<img width="1021" height="975" alt="Image" src="https://github.com/user-attachments/assets/9810a45d-6697-47a7-9597-c22a59203b4c" />
+
