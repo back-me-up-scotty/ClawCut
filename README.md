@@ -42,10 +42,14 @@ By offloading the heavy lifting to the Mac, the Raspberry Pi remains responsive,
 ### **1\. Prepare the Mac (The LLM Server)**
 
 To allow the Raspberry Pi to talk to your Mac, the MLX server must not only run on localhost. You **must** bind it to your network interface.  
-Start the server on your Mac with the \--host 0.0.0.0 flag:  
-python \-m mlx\_lm.server \--model \[YOUR\_MODEL\_ID\] \--host 0.0.0.0 \--port 8080
+Start the server on your Mac with the `\--host 0.0.0.0` flag: 
 
-⚠️ **IMPORTANT:** Replace \[YOUR\_MODEL\_ID\] with the model of your choice (e.g., mlx-community/Qwen2.5-14B-Instruct-4bit). Ensure that the model fits your available RAM (a 14B model requires approx. 9-10 GB RAM, a 32B model approx. 19 GB). Choose a smaller model (e.g., 7B) if your Mac only has 8 GB or 16 GB of RAM.  
+```bash
+python \-m mlx\_lm.server \--model \[YOUR\_MODEL\_ID\] \--host 0.0.0.0 \--port 8080
+```
+
+⚠️ **IMPORTANT:** Replace `\[YOUR\_MODEL\_ID\]` with the model of your choice (e.g., `mlx-community/Qwen2.5-14B-Instruct-4bit`). Ensure that the model fits your available RAM (a 14B model requires approx. 9-10 GB RAM, a 32B model approx. 19 GB). Choose a smaller model (e.g., 7B) if your Mac only has 8 GB or 16 GB of RAM.  
+
 ⚠️ **Note on Performance:** The very first request (or the first one after clearing a chat session) will take significantly longer (often 30-60 seconds) because the Mac has to process the entire 16k context for the first time. **ClawCut-MLX** optimization becomes effective starting with the **second** request, reducing response times to just a few seconds.  
 *Note: Using 0.0.0.0 makes the LLM accessible to any device in your local network.*
 
@@ -53,15 +57,15 @@ python \-m mlx\_lm.server \--model \[YOUR\_MODEL\_ID\] \--host 0.0.0.0 \--port 8
 
 If the connection is still refused (Error 502/61), your macOS firewall might be blocking the port.
 
-* Go to **System Settings \> Network \> Firewall**.  
-* Either disable it temporarily for testing or click **Options** and ensure that your Python binary (inside your mlx\_env) is allowed to receive incoming connections.  
-* **Test connection from Pi:** Run nc \-zv \[MAC\_IP\] 8080\. It should say "succeeded".
+* Go to **`System Settings \> Network \> Firewall`**.  
+* Either disable it temporarily for testing or click **Options** and ensure that your Python binary (inside your `mlx\_env`) is allowed to receive incoming connections.  
+* **Test connection from Pi:** Run `nc \-zv \[MAC\_IP\] 8080\`. It should say "succeeded".
 
 ### **2\. Configure the Proxy (on Raspberry Pi)**
 
 Edit the clawcut-mlx.py file and adjust the constants:
 
-* MAC\_IP: The local IP address of your Mac (e.g., 192.168.0.184).  
+* MAC\_IP: The local IP address of your Mac (e.g., `192.168.0.5`).  
 * OPENCLAW\_MODEL\_ID: The exact model ID used in your openclaw.json.  
 * MLX\_MODEL\_IDENTIFIER: The name of the model loaded on your Mac.  
 * DEBUG\_MODE: Set to True to see the raw communication and JSON clutter.
@@ -70,26 +74,37 @@ Edit the clawcut-mlx.py file and adjust the constants:
 
 ### **1\. Clone the repository**
 
+```bash
 git clone \[https://github.com/yourusername/clawcut-mlx.git\](https://github.com/yourusername/clawcut-mlx.git)  
 cd clawcut-mlx
+```
 
 ### **2\. Create a Virtual Environment (Recommended)**
 
+```bash
 python3 \-m venv proxy\_env  
 source proxy\_env/bin/activate
+```
 
 ### **3\. Install Dependencies**
 
+```bash
 pip install flask requests
+```
 
 ## **Usage**
 
 Start the proxy on your Raspberry Pi:  
+
+```bash
 python3 clawcut-mlx.py
+```
 
 ### **OpenClaw Configuration (openclaw.json)**
 
 Point your OpenClaw provider to the proxy. If OpenClaw and the Proxy are on the same Pi, use the following configuration:  
+
+```json
 "models": {  
     "mode": "merge",  
     "providers": {  
@@ -126,7 +141,7 @@ Point your OpenClaw provider to the proxy. If OpenClaw and the Proxy are on the 
       }  
     }  
   }
-
+```
 ## **License**
 
 ### **MIT License**
