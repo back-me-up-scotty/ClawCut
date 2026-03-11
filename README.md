@@ -159,3 +159,4 @@ Point your OpenClaw provider to the proxy. If OpenClaw and the Proxy are on the 
     }  
   }
 ```
+<img width="1021" height="975" alt="Image" src="https://github.com/user-attachments/assets/9810a45d-6697-47a7-9597-c22a59203b4c" />
