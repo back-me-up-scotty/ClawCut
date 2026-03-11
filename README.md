@@ -127,7 +127,7 @@ Point your OpenClaw provider to the proxy. If OpenClaw and the Proxy are on the 
         "baseUrl": "http://127.0.0.1:5000/v1",
         "apiKey": "ollama-local",  
         "api": "ollama",  
-        "models": \[  
+        "models": [  
           {  
             "id": "ollama/qwen2.5:14b",  
             "name": "qwen 2.5 14b",  
@@ -147,7 +147,7 @@ Point your OpenClaw provider to the proxy. If OpenClaw and the Proxy are on the 
               "supportsDeveloperRole": false  
             }  
           }  
-        \]  
+        ]  
       }  
     }  
   },  
