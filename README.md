@@ -109,7 +109,7 @@ Point your OpenClaw provider to the proxy. If OpenClaw and the Proxy are on the 
     "mode": "merge",  
     "providers": {  
       "ollama": {  
-        "baseUrl": "\[http://127.0.0.1:5000/v1\](http://127.0.0.1:5000/v1)",  
+        "baseUrl": "http://127.0.0.1:5000/v1",
         "apiKey": "ollama-local",  
         "api": "ollama",  
         "models": \[  
@@ -117,7 +117,9 @@ Point your OpenClaw provider to the proxy. If OpenClaw and the Proxy are on the 
             "id": "ollama/qwen2.5:14b",  
             "name": "qwen 2.5 14b",  
             "reasoning": false,  
-            "input": \["text"\],  
+            "input": [
+              "text"
+            ],
             "cost": {  
               "input": 0,  
               "output": 0,  
