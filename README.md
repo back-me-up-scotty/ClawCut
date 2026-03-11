@@ -22,7 +22,7 @@ This proxy is specifically designed for users who run a **split-system architect
 1. **The Brain (Mac):** A powerful Mac mini or MacBook acts as the LLM engine, providing high-speed inference.  
 2. **The Heart (Raspberry Pi/Linux):** A Pi or Linux server hosts the OpenClaw framework, managing integrations like WhatsApp, Telegram, or home automation.
 
-By offloading the heavy lifting to the Mac, the Raspberry Pi remains responsive, and the LLM responses become near-instant.
+By using **ClawCut** the LLM responses become near-instant.
 
 ## **Key Features**
 
