@@ -1,7 +1,7 @@
 # **ClawCut MLX Proxy**
 
 A high-performance bridge between **OpenClaw** and **Apple Silicon (MLX-LM)**.  
-This proxy allows you to run large language models (like Qwen 2.5) on a Mac mini/MacBook (M1/M2/M3/M4) while maintaining compatibility with the OpenClaw framework running on a Raspberry Pi or other Linux servers.
+This proxy allows you to run larger language models (like Qwen 2.5:14b) on a Mac mini/MacBook (M1/M2/M3/M4) while maintaining compatibility with the OpenClaw framework running on a Raspberry Pi or other Linux servers.
 
 
 <img width="1021" height="975" alt="Image" src="https://github.com/user-attachments/assets/9810a45d-6697-47a7-9597-c22a59203b4c" />
