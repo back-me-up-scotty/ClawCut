@@ -75,10 +75,10 @@ If the connection is still refused (Error 502/61), your macOS firewall might be 
 
 Edit the clawcut-mlx.py file and adjust the constants:
 
-* MAC\_IP: The local IP address of your Mac (e.g., `192.168.0.5`).  
-* OPENCLAW\_MODEL\_ID: The exact model ID used in your openclaw.json.  
-* MLX\_MODEL\_IDENTIFIER: The name of the model loaded on your Mac.  
-* DEBUG\_MODE: Set to True to see the raw communication and JSON clutter.
+* `MAC\_IP:` The local IP address of your Mac (e.g., `192.168.0.5`).  
+* `OPENCLAW\_MODEL\_ID:` The exact model ID used in your openclaw.json.  
+* `MLX\_MODEL\_IDENTIFIER:` The name of the model loaded on your Mac.  
+* `DEBUG\_MODE:` Set to True to see the raw communication and JSON clutter.
 
 ## **Installation**
 
@@ -104,7 +104,7 @@ pip install flask requests
 
 ### **3\. Install Dependencies (on Pi)**
 ```bash
-chmod +x /home/user/ClawCut/clawcut.py
+chmod +x /home/user/clawcut-mlx/clawcut-mlx.py
 ```
 
 ## **Usage**
