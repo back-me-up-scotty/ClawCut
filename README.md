@@ -92,8 +92,8 @@ cd clawcut-mlx
 ### **2\. Create a Virtual Environment (on MAC / Recommended)**
 
 ```bash
-python3 \-m venv proxy\_env  
-source proxy\_env/bin/activate
+python3 -m venv proxy env  
+source proxy_env/bin/activate
 ```
 
 ### **3\. Install Dependencie (on MAC)s**
