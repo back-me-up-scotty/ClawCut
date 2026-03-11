@@ -55,10 +55,10 @@ To allow the Raspberry Pi to talk to your Mac, the MLX server must not only run 
 Start the server on your Mac with the `--host 0.0.0.0` flag: 
 
 ```bash
-python -m mlx_lm.server --model [YOUR\_MODEL\_ID\] --host 0.0.0.0 --port 8080
+python -m mlx_lm.server --model [YOUR_MODEL_ID] --host 0.0.0.0 --port 8080
 ```
 
-⚠️ **IMPORTANT:** Replace `[YOUR_MODEL_ID\]` with the model of your choice (e.g., `mlx-community/Qwen2.5-14B-Instruct-4bit`). Ensure that the model fits your available RAM (a 14B model requires approx. 9-10 GB RAM, a 32B model approx. 19 GB). Choose a smaller model (e.g., 7B) if your Mac only has 8 GB or 16 GB of RAM.  
+⚠️ **IMPORTANT:** Replace `[YOUR_MODEL_ID]` with the model of your choice (e.g., `mlx-community/Qwen2.5-14B-Instruct-4bit`). Ensure that the model fits your available RAM (a 14B model requires approx. 9-10 GB RAM, a 32B model approx. 19 GB). Choose a smaller model (e.g., 7B) if your Mac only has 8 GB or 16 GB of RAM.  
 
 ⚠️ **Note on Performance:** The very first request (or the first one after clearing a chat session) will take significantly longer (often 30-60 seconds) because the Mac has to process the entire 16k context for the first time. **ClawCut-MLX** optimization becomes effective starting with the **second** request, reducing response times to just a few seconds.  
 *Note: Using 0.0.0.0 makes the LLM accessible to any device in your local network.*
