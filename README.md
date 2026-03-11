@@ -35,7 +35,7 @@ By offloading the heavy lifting to the Mac, the Raspberry Pi remains responsive,
 
 You don't need to manually download model files. The mlx-lm server handles everything automatically.
 
-1. **Browse Models:** Go to Hugging Face and search for the mlx-community organization. They provide pre-converted models optimized for Apple Silicon.
+1. **Browse Models:** Go to [Hugging Face](https://huggingface.co/mlx-community) and search for the `mlx-community organization`. They provide pre-converted models optimized for Apple Silicon.
 
 2. **Choose your Model:** Copy the repository name (e.g., mlx-community/Qwen2.5-14B-Instruct-4bit).
 
