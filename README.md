@@ -31,6 +31,16 @@ By offloading the heavy lifting to the Mac, the Raspberry Pi remains responsive,
 * **Performance Tracking:** Real-time console output of prefill duration, token count, and generation speed (tokens per second).  
 * **Transparency:** With the **DEBUG\_MODE** enabled, you can inspect the full "JSON Clutter" sent by OpenClaw to understand exactly what the model is processing.
 
+## **How to find & download MLX Models**
+
+You don't need to manually download model files. The mlx-lm server handles everything automatically.
+
+1. **Browse Models:** Go to Hugging Face and search for the mlx-community organization. They provide pre-converted models optimized for Apple Silicon.
+
+2. **Choose your Model:** Copy the repository name (e.g., mlx-community/Qwen2.5-14B-Instruct-4bit).
+
+3. **Automatic Download:** When you start the server for the first time using the --model flag, mlx-lm will automatically download the files (several GBs) and cache them locally on your Mac.
+
 ## **Prerequisites**
 
 * **Python 3.x**  
@@ -79,17 +89,22 @@ git clone \[https://github.com/yourusername/clawcut-mlx.git\](https://github.com
 cd clawcut-mlx
 ```
 
-### **2\. Create a Virtual Environment (Recommended)**
+### **2\. Create a Virtual Environment (on MAC / Recommended)**
 
 ```bash
 python3 \-m venv proxy\_env  
 source proxy\_env/bin/activate
 ```
 
-### **3\. Install Dependencies**
+### **3\. Install Dependencie (on MAC)s**
 
 ```bash
 pip install flask requests
+```
+
+### **3\. Install Dependencies (on Pi)**
+```bash
+chmod +x /home/user/ClawCut/clawcut.py
 ```
 
 ## **Usage**
