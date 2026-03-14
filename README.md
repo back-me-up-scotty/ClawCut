@@ -256,7 +256,7 @@ EMERGENCY_RESCUES = [
 ```
 
 
-## **Prerequisites**
+## PREREQUISITES
 
 To run the ClawCut Universal Proxy, you need Python 3 and two libraries: 
 
@@ -264,59 +264,96 @@ To run the ClawCut Universal Proxy, you need Python 3 and two libraries:
 - requests (to communicate with your LLM backend).
 
 
-## **Installation**
+## INSTALLATION
 
 It is highly recommended to use a Virtual Environment (venv) to keep your system clean.
 
-1. Linux (Ubuntu / Debian / Raspberry Pi OS)
+**Linux (Ubuntu / Debian / Raspberry Pi OS)**
+
 Open your terminal and run the following commands:
 
-# Update package list
+Update package list
+
+```bash
 sudo apt update
+```
 
-# Install Python pip and venv support
+Install Python pip and venv support
+```bash
 sudo apt install python3-pip python3-venv -y
+```
 
-# Navigate to your ClawCut folder
+Navigate to your ClawCut folder
+```bash
 cd ~/ClawCut
+```
 
-# Create a virtual environment
+Create a virtual environment
+
+```bash
 python3 -m venv proxy_env
+```
 
-# Activate the environment
+Activate the environment
+
+```bash
 source proxy_env/bin/activate
+```
 
-# Install requirements
+Install requirements
+```bash
 pip install Flask requests
+```
 
-2. macOS
+** macOS **
 macOS usually comes with Python 3 pre-installed. Open the Terminal app:
 
-# Create a virtual environment
+Create a virtual environment
+
+```bash
 python3 -m venv proxy_env
+```
 
-# Activate the environment
+Activate the environment
+
+```bash
 source proxy_env/bin/activate
+```
 
-# Install requirements
+Install requirements
+
+```bash
 pip install Flask requests
+```
 
-3. Windows
+** Windows **
 Open PowerShell or Command Prompt (CMD) as Administrator:
 
-# Create a virtual environment
+Create a virtual environment
+
+```bash
 python -m venv proxy_env
+```
 
-# Activate the environment (PowerShell)
+Activate the environment (PowerShell)
+
+```bash
 .\proxy_env\Scripts\Activate.ps1
+```
 
-# OR Activate the environment (CMD)
+OR Activate the environment (CMD)
+
+```bash
 # .\proxy_env\Scripts\activate.bat
+```
 
-# Install requirements
+Install requirements
+```bash
 pip install Flask requests
+```
 
-How to install and start the ClawCut
+
+## INSTALL & START ClawCut ##
 
 Clone the repository
 
@@ -324,6 +361,7 @@ Clone the repository
 git clone [https://github.com/back-me-up-scotty/ClawCut.git](https://github.com/back-me-up-scotty/ClawCut.git)  
 cd clawcut-mlx
 ```
+
 Assign rights to execute ClawCut (for example on Mac & Linux)
 
 ```bash
@@ -345,7 +383,7 @@ python clawcut-mlx.p -restart # (Kills process and restart with profile LLM1/def
 Note: You can always tell if the environment is active by the (proxy_env) prefix in your terminal prompt.
 
 
-USING A MLX-Model for Mac
+## USING A MLX-Model for Mac ##
 
 How to find & download MLX Models
 
@@ -366,22 +404,22 @@ python -m mlx_lm.server --model [YOUR_MODEL_ID] --host 0.0.0.0 --port 8080
 ```
 *Note: Using 0.0.0.0 makes the LLM accessible to any device in your local network.*
 
-⚠️ **IMPORTANT:** Replace `[YOUR_MODEL_ID]` with the model of your choice (e.g., `mlx-community/Qwen2.5-14B-Instruct-4bit`). Ensure that the model fits your available RAM (a 14B model requires approx. 9-10 GB RAM, a 32B model approx. 19 GB). Choose a smaller model (e.g., 7B) if your Mac only has 8 GB or 16 GB of RAM.  
+** ⚠️ IMPORTANT:** Replace `[YOUR_MODEL_ID]` with the model of your choice (e.g., `mlx-community/Qwen2.5-14B-Instruct-4bit`). Ensure that the model fits your available RAM (a 14B model requires approx. 9-10 GB RAM, a 32B model approx. 19 GB). Choose a smaller model (e.g., 7B) if your Mac only has 8 GB or 16 GB of RAM.  
 
-⚠️ **Note on Performance:** The very first request (or the first one after clearing a chat session) will take significantly longer (often 30-60 seconds) because the Mac has to process the entire 16k context for the first time. **ClawCut-MLX** optimization becomes effective starting with the **second** request, reducing response times to just a few seconds.  
+** ⚠️ Note on Performance:** The very first request (or the first one after clearing a chat session) will take significantly longer (often 30-60 seconds) because the Mac has to process the entire 16k context for the first time. **ClawCut-MLX** optimization becomes effective starting with the **second** request, reducing response times to just a few seconds.  
 
-#### **⚠️ macOS Firewall Note**
+**⚠️ macOS Firewall Note
 
 If the connection is still refused (Error 502/61), your macOS firewall might be blocking the port.
 
-* Go to **`System Settings > Network > Firewall`**.  
-* Either disable it temporarily for testing or click **Options** and ensure that your Python binary (inside your `mlx_env`) is allowed to receive incoming connections.  
-* **Test connection from Pi:** Run `nc -zv [MAC_IP] 8080\`. It should say "succeeded".
+- Go to `System Settings > Network > Firewall`.  
+- Either disable it temporarily for testing or click **Options** and ensure that your Python binary (inside your `mlx_env`) is allowed to receive incoming connections.  
+- Test connection: Run `nc -zv [MAC_IP] 8080\`. It should say "succeeded".
 
  
 ### **OpenClaw Configuration (openclaw.json)**
 
-Point your OpenClaw provider to the proxy. If OpenClaw and the Proxy are on the same Pi, use the following configuration:  
+Point your OpenClaw provider to the proxy. If OpenClaw and the ClawCut are on the same machine (if not change IP), use the following configuration:  
 
 ```json
 "models": {  
@@ -423,4 +461,10 @@ Point your OpenClaw provider to the proxy. If OpenClaw and the Proxy are on the 
     }  
   }
 ```
+
+When using this proxy, the specific model name you configure in OpenClaw does NOT matter.
+The proxy intercepts the traffic and completely overrides the requested model.
+
+You only need to ensure your OpenClaw provider URL points to the proxy: `"http://127.0.0.1:5000/v1"`
+ 
 
