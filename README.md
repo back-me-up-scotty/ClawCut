@@ -60,13 +60,15 @@ WHEN TO USE WITH CAUTION:
 
 
 
-### **2\. Configure the Proxy)**
+### ** Configure the Proxy **
+
+CONFIGURATION PROFILES
 
 Edit the clawcut.py file and adjust the profiles. If you have to LLM running, you can switch between both profiles.
 
 Use `"port": 8080` for example if theres a flask server running. Change port, if neccessary. 
 Use `"port": 11434` for example if Ollama is running. Change port, if neccessary.
-* `IP:` The local IP address of your LLM-Host (e.g., `192.168.0.5`).  
+* `IP:` The (local) IP address of your LLM-Host (e.g., `192.168.0.5` if it's on a remote machine or `127.0.0.1` if ClawCut and OpenClaw running on the same machine ).  
 * `model_id:` The exact model ID used in your openclaw.json.  
 * `model_name:` The name of the model in your openclaw.json.  
 
@@ -88,7 +90,21 @@ PROFILES = {
 }
 ```
 
-Change location of log file
+Note for OpenClaw Configuration (e.g., openclaw.json): 
+When using this proxy, the specific model name you configure in OpenClaw does NOT matter.
+The proxy intercepts the traffic and completely overrides the requested model 
+based on the selected profile below. 
+You only need to ensure your OpenClaw provider URL points to the proxy: 
+"http://127.0.0.1:5000/v1"
+
+
+Logging & Storage Config
+
+Change flags and location of log file.
+
+DEBUG_MODE = True prints the full JSON payloads to the console (useful for troubleshooting).
+WRITE_TO_LOGFILE saves the terminal output to the specified PATH_TO_LOGFILE.
+DELETE_LOG_SIZE rotates/deletes the log automatically when it reaches this size to prevent disk full issues.
 
 ```bash
 #Linux/Pi: "/home/username/" 
@@ -97,6 +113,83 @@ Change location of log file
 
 PATH_TO_LOGFILE = '/home/user/clawcut.log' 
 ```
+
+Change this to match the root directory where your scripts (if you have some) are stored, that OpenClaw should execute.
+This matches what you tell the LLM for example in your TOOLS.md. See also EMERGENCY_RESCUES.
+
+SMART AMNESIA MODE
+
+Over time, chat histories get too long for small models to process efficiently.
+If True, the proxy watches for tool calls (specifically the 'exec' tool). 
+Once a tool has been successfully executed, the proxy truncates all chat history 
+prior to that execution. This creates a "fresh start" while keeping the final results,
+preventing infinite loops and keeping the context window and RAM small.
+
+```bash
+ENABLE_SMART_AMNESIA = True
+```
+
+CHAT HISTORY
+
+Amnesia only when the current turn processes a tool result (last message is ‘tool’)
+Example: You exchanged 5 messages without calling a tool. The context is preserved. 
+Then you call a tool (exec). Result: The context is cut off, and you can no longer 
+retrieve the conversation that took place before the tool was called. 
+
+`CHAT_HISTORY_LIMIT` lets you specify how much chat history (recent messages in a normal chat) 
+should be kept.
+
+```bash
+CHAT_HISTORY_LIMIT = 10 # Number of messages (excluding system messages) in chat mode
+```
+
+```bash
+EXPECTED_SCRIPT_BASE_PATH = "/home/user/"
+```
+
+Attention Forcer (End-of-Prompt Injection)
+
+If True, this injects a strong reminder at the very end of the user's latest message.
+
+```bash
+ENABLE_ATTENTION_FORCER = True
+ATTENTION_FORCER_TEXT = "\n\n[SYSTEM-REMINDER: NEVER respond to requests for local scripts, data, or services directly with text! You MUST use the ‘exec’ tool FIRST!]"
+```
+
+Emergency Rescue (Catch & Convert) - Where the tool call magic happens
+
+Intercepts specific model texts and converts them into hidden 'exec' tool calls.
+Useful if the model only describes what it wants to do, but forgets to output the actual JSON tool call.
+If `ENABLE_INPUT_RESCUE` is `True`, this also triggers for incoming user requests (e.g. Cron jobs).
+
+Scripts down below are examples how to use. These are my own script I want OpenClaw to call. Change to
+your scripts (if you have some) and set `ENABLE_EMERGENCY_RESCUE = True`
+
+`ENABLE_INPUT_RESCUE` takes precedence over the LLM—it scans the incoming user message and bypasses the 
+LLM entirely, going straight to the exec call without even consulting the LLM.
+
+`ENABLE_EMERGENCY_RESCUE` intervenes after the LLM—it scans the LLM’s text response in `generate()` 
+and converts recognized keywords into an `exec` call if the model forgot to use the tool.
+
+```bash
+ENABLE_EMERGENCY_RESCUE = True
+ENABLE_INPUT_RESCUE = False
+EMERGENCY_RESCUES = [
+    {
+        "keywords": ["weather", "tell"], 
+        "command": 'bash /home/user/weather.sh "New York"'
+    },
+    {
+        "keywords": ["diesel", "price"], 
+        "command": 'bash /home/user/.openclaw/workspace/skills/diesel-price/diesel_price.sh'
+    },
+     {
+        "keywords": ["backup", "create"], 
+        "command": 'bash /home/user/.openclaw/workspace/skills/system_control/run_bmus.sh'
+    }
+]
+```
+
 
 ## **Prerequisites**
 
