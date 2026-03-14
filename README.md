@@ -98,9 +98,9 @@ You only need to ensure your OpenClaw provider URL points to the proxy:
 
 **Logging & Storage Config**
 
-DEBUG_MODE = True prints the full JSON payloads to the console (useful for troubleshooting).
-WRITE_TO_LOGFILE saves the terminal output to the specified PATH_TO_LOGFILE.
-DELETE_LOG_SIZE rotates/deletes the log automatically when it reaches this size to prevent disk full issues.
+`DEBUG_MODE = True` prints the full JSON payloads to the console (useful for troubleshooting).
+`WRITE_TO_LOGFILE` saves the terminal output to the specified PATH_TO_LOGFILE.
+`DELETE_LOG_SIZE` rotates/deletes the log automatically when it reaches this size to prevent disk full issues.
 
 Location/path to logs. Examples:
  
