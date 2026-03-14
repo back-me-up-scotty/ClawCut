@@ -158,10 +158,14 @@ DELETE_LOG_SIZE = '10 MB'
 
 # --- SMART AMNESIA MODE ---
 # Over time, chat histories get too long for small models to process efficiently.
-# If True, the proxy watches for tool calls (specifically the 'exec' tool). 
-# Once a tool has been successfully executed, the proxy truncates all chat history 
-# prior to that execution. This creates a "fresh start" while keeping the final results,
-# preventing infinite loops and keeping the context window small.
+# If enabled, the proxy watches the current turn: when the last message is a tool 
+# result (i.e., the model just received the output of an exec call), the proxy 
+# truncates all prior chat history. This creates a "fresh start" for the model 
+# to formulate its response based on the tool result alone, preventing infinite 
+#loops and keeping the context window and RAM small.
+
+# Outside of tool execution turns, normal chat history is preserved up to 
+# `CHAT_HISTORY_LIMIT` messages (see below).
 ENABLE_SMART_AMNESIA = True
 
 # Amnesia only when the current turn processes a tool result (last message is ‘tool’)
@@ -233,7 +237,7 @@ ATTENTION_FORCER_TEXT = "\n\n[SYSTEM-REMINDER: NEVER respond to requests for loc
 # Scripts down below are examples how to use. These are my own script I want OpenClaw to call. Change to
 # your scripts if you have some and set ENABLE_EMERGENCY_RESCUE = True
 ENABLE_EMERGENCY_RESCUE = True
-ENABLE_INPUT_RESCUE = True
+ENABLE_INPUT_RESCUE = False
 EMERGENCY_RESCUES = [
     {
         "keywords": ["weather", "tell"], 
