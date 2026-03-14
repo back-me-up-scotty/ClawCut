@@ -1,41 +1,64 @@
-# **ClawCut MLX Proxy**
+# **ClawCut Proxy**
 
-A high-performance bridge between **OpenClaw** and **Apple Silicon (MLX-LM)**.  
-This proxy allows you to run larger language models (like Qwen 2.5:14b) on a Mac mini/MacBook (M1/M2/M3/M4) while maintaining compatibility with the OpenClaw framework running on a Raspberry Pi or other Linux servers.
+OpenClaw is a powerful framework that, by default, sends massive system prompts 
+(often >28,000 characters) and complex tool definitions (JSON tools) to the LLM. 
+While large cloud models or high-end local models (14B etc.) handle this well, 
+small models (7B, 8B) running on limited hardware (Mac/MLX or Raspberry Pi) 
+often suffer from "Cognitive Overload". This is where ClawCut steps in.
 
+ClawCut is an experimental proxy to manipulate, inject JSON-Calls and 
+extract JSON clutter from OpenClaw. 
+
+BENEFITS OF USING CLAWCUT:
+ 
+- Extreme processing latency (slow Time To First Token).
+- Forgetting their identity or available tools.
+- Hallucinating text answers instead of executing local scripts.
+- Connection timeouts or malformed JSON responses.
+- Huge RAM consumption
+
+This proxy acts as a "Man-in-the-Middle" between OpenClaw and your local LLM 
+server to optimize the data flow:
+
+-  PROMPT TRIMMING: Automatically removes unused default skills from the system 
+   prompt to keep the context window small and focused.
+-  SMART AMNESIA: Intelligently truncates chat history after successful tool 
+   executions to free up "mental space" for the model.
+-  ATTENTION FORCER: Injects a reminder at the very end of the user query to 
+   ensure the model prioritizes tool usage.
+-  TOOL FORCER: Injects keywords for tool calling and points to commands.
+-  INPUT RESCUE: Short-circuits known incoming requests (like Cron-Jobs) to 
+   bypass LLM latency and ensure 100% reliability for automated tasks.
+-  BASH-RESCUE: Detects poorly formatted script calls (e.g., naked code blocks) 
+   and converts them into valid OpenClaw tool calls on the fly.
+-  Automatically filters dynamic timestamps from system prompts to enable near-instant 
+   responses via hardware caching.
+-  Translates between OpenAI-compatible streams (MLX) and the Ollama/NDJSON 
+   format expected by OpenClaw.
+-  Real-time console output of prefill duration, token count, and generation 
+   speed (tokens per second).
+-  With the **DEBUG\_MODE** enabled, you can inspect the full "JSON Clutter" 
+   sent by OpenClaw to understand exactly what the model is processing.
+
+PERFORMANCE:
+- Significantly faster response times (TTFT), as the model has much less text 
+  to process upfront.
+- Improved reliability when using and calling scripts (bash or whatever).
+- Robust error handling for stream interruptions or formatting errors.
+
+WHEN TO USE:
+- Ideal for small models (7B-8B) running on hardware like Mac (MLX), Windows 
+  or Linux.
+- If your model "chats" too much instead of executing commands.
+
+WHEN TO USE WITH CAUTION:
+- If you are using highly intelligent, large models (14B+) that can handle 
+  complex prompts natively. In this case, the proxy can act purely as a logger 
+  and format translator without manipulating the content if PASS_THROUGH_MODE = True.
 
 <img width="1021" height="975" alt="Image" src="https://github.com/user-attachments/assets/9810a45d-6697-47a7-9597-c22a59203b4c" />
 
-
-## **Motivation**
-
-OpenClaw is a powerful framework, but it often sends a massive amount of "JSON Clutter" (system prompts, tool definitions, and metadata) in every request. This often leads to:
-
-* **LLM Timeouts:** Standard setups frequently run into timeouts because the model takes too long to process the massive context.  
-* **Poor Reasoning:** Models can get "lost" in the clutter, leading to hallucinations or ignored tool calls.
-
-**ClawCut-MLX** solves this by optimizing the communication and leveraging the power of Apple Silicon. While this setup is optimized for speed, the performance depends on your hardware:
-
-* **Example:** With a **Mac mini M4 Pro (24 GB RAM)** and a **14B model**, this setup achieves generation speeds of up to **21+ tokens/s** with a warm KV-cache.  
-* **Flexibility:** The proxy works with any MLX-compatible model. You can use smaller models (e.g., 7B) for even higher speeds or larger models (e.g., 32B+) if your Mac has sufficient Unified Memory.
-
-## **Typical Use Case (Split Setup)**
-
-This proxy is specifically designed for users who run a **split-system architecture**:
-
-1. **The Brain (Mac):** A powerful Mac mini or MacBook acts as the LLM engine, providing high-speed inference.  
-2. **The Heart (Raspberry Pi/Linux):** A Pi or Linux server hosts the OpenClaw framework, managing integrations like WhatsApp, Telegram, or home automation.
-
-By using **ClawCut** the LLM responses become near-instant.
-
-## **Key Features**
-
-* **KV-Cache Optimization:** Automatically filters dynamic timestamps from system prompts to enable near-instant responses via hardware caching.  
-* **Protocol Translation:** Translates between OpenAI-compatible streams (MLX) and the Ollama/NDJSON format expected by OpenClaw.  
-* **Performance Tracking:** Real-time console output of prefill duration, token count, and generation speed (tokens per second).  
-* **Transparency:** With the **DEBUG\_MODE** enabled, you can inspect the full "JSON Clutter" sent by OpenClaw to understand exactly what the model is processing.
-
-## **How to find & download MLX Models**
+**How to find & download MLX Models**
 
 You don't need to manually download model files. The mlx-lm server handles everything automatically.
 
