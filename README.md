@@ -213,14 +213,15 @@ TRIM_SKILLS = [
 
 ## ATTENTION FORCER (End-of-Prompt Injection)
 
-If True, this injects a strong reminder at the very end of the user's latest message.
+If True, this injects a strong reminder at the very end of the user's latest message. Change thist to whatever you want 
+your LLM focus on.
 
 ```bash
 ENABLE_ATTENTION_FORCER = True
 ATTENTION_FORCER_TEXT = "\n\n[SYSTEM-REMINDER: NEVER respond to requests for local scripts, data, or services directly with text! You MUST use the ‘exec’ tool FIRST!]"
 ```
 
-Emergency Rescue (Catch & Convert) - Where the tool call magic happens
+## EMERGENCY RESCUE - Where the tool call magic happens
 
 Intercepts specific model texts and converts them into hidden 'exec' tool calls.
 Useful if the model only describes what it wants to do, but forgets to output the actual JSON tool call.
