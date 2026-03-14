@@ -233,7 +233,7 @@ Intercepts specific model texts and converts them into hidden 'exec' tool calls.
 Useful if the model only describes what it wants to do, but forgets to output the actual JSON tool call.
 If `ENABLE_INPUT_RESCUE` is `True`, this also triggers for incoming user requests (e.g. Cron jobs).
 
-Scripts down below are examples how to use. These are my own script I want OpenClaw to call. Change to
+Scripts down below are examples how to use. These are my own scripts I want OpenClaw to call. Change to
 your scripts (if you have some) and set `ENABLE_EMERGENCY_RESCUE = True`
 
 `ENABLE_INPUT_RESCUE` takes precedence over the LLM—it scans the incoming user message and bypasses the 
