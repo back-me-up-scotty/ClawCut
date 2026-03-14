@@ -311,7 +311,8 @@ Install requirements
 pip install Flask requests
 ```
 
-** macOS **
+**macOS**
+
 macOS usually comes with Python 3 pre-installed. Open the Terminal app:
 
 Create a virtual environment
@@ -332,7 +333,7 @@ Install requirements
 pip install Flask requests
 ```
 
-** Windows **
+**Windows**
 Open PowerShell or Command Prompt (CMD) as Administrator:
 
 Create a virtual environment
