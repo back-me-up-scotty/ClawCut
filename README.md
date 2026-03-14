@@ -1,7 +1,7 @@
 ## ClawCut Proxy
 
 OpenClaw is a powerful framework that, by default, sends massive system prompts 
-(often >28,000 characters) and complex tool definitions (JSON tools) to the LLM. 
+(often >28,000 lines) and complex tool definitions (JSON tools) to the LLM. 
 While large cloud models or high-end local models (14B etc.) handle this well, 
 small models (7B, 8B) running on limited hardware (Mac/MLX or Raspberry Pi) 
 often suffer from "Cognitive Overload". This is where ClawCut steps in.
