@@ -1,21 +1,20 @@
-MIT License
-
-Copyright (c) 2026 BmuS
+ClawCut - Universal LLM Bridge & Proxy (BETA) - v. 3.1.9
+--------------------------------------------------------------------------------
+LICENSE: ClawCut Personal & Non-Commercial License
+Copyright (c) 2026 Niels Gerhardt
+https://github.com/back-me-up-scotty/ClawCut
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+of this software and associated documentation files, to use, copy, modify, 
+and share the software for PERSONAL and NON-COMMERCIAL purposes only, 
+subject to the following conditions:
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+1. The above copyright notice and this permission notice shall be included in 
+   all copies or substantial portions of the software.
+2. COMMERCIAL USE, sale, or distribution for profit is STRICTLY PROHIBITED.
+3. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+There is no guarantee that ClawCut will work in every 
+configuration or with future OpenClaw updates. It is very likely that 
+this is not the case. ClawCut therefore depends on the community for 
+its development. Make it your own. Share your results.
