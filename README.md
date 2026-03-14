@@ -54,7 +54,7 @@ server to optimize the data flow:
 ## WHEN TO USE WITH CAUTION
 - If you are using highly intelligent, large models (14B+) that can handle 
   complex prompts natively. In this case, the proxy can act purely as a logger 
-  and format translator without manipulating the content if PASS_THROUGH_MODE = True.
+  and format translator without manipulating the content if `PASS_THROUGH_MODE = True`.
 
 ## CONFIGURE CLAWCUT
 
