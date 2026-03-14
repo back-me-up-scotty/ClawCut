@@ -104,14 +104,14 @@ DELETE_LOG_SIZE rotates/deletes the log automatically when it reaches this size 
 
 Location/path to logs. Examples:
  
-Linux/Pi: "/home/username/" 
-Mac: "/Users/username/"
-Windows: "C:/Users/username/"
+Linux/Pi: `"/home/username/"` 
+Mac: `"/Users/username/"`
+Windows: `"C:/Users/username/"`
 
 ```bash
 DEBUG_MODE = True
 WRITE_TO_LOGFILE = True
-PATH_TO_LOGFILE = '/home/nhg/clawcut.log' # Change to your preferred log path
+PATH_TO_LOGFILE = '/home/user/clawcut.log' # Change to your preferred log path
 DELETE_LOG_SIZE = '10 MB' 
 ```
 
@@ -130,7 +130,7 @@ ENABLE_SMART_AMNESIA = True
 ## CHAT HISTORY
 
 Amnesia only when the current turn processes a tool result (last message is ‘tool’)
-Example: You exchanged 5 messages without calling a tool. The context is preserved. 
+Example: You exchanged 10 messages without calling a tool. The context is preserved. 
 Then you call a tool (exec). Result: The context is cut off, and you can no longer 
 retrieve the conversation that took place before the tool was called. 
 
@@ -165,17 +165,53 @@ AUTO_DELIVERY_CHANNEL = "whatsapp"
 AUTO_DELIVERY_TARGET = "+49123456" 
 ```
 
-Important: Since OpenClaw version 2026.3.12 there are issues with the routing of messages triggered by a cron job. 
+Important: Since OpenClaw version 2026.3.12 there seems to be issues with the routing of messages triggered by a cron job. 
 ClawCut clearly sees this messages. The issue seems to be on OpenClaw's side. FORCE_CRON_DELIVERY has unfortunately 
 no effect at the moment. OpenClaw ignores it.
 
+## PASSTHROUGH MODE
 
+Pure Pass-Through Mode: If True, completely disables all proxy logic (trimming, amnesia, auto-delivery, bash-rescue).
+The proxy will only log traffic and forward the exact JSON between OpenClaw and the LLM, maintaining format compatibility.
+Useful for powerful models (e.g., 14B, 70B, GPT-4) that don't need workarounds. 
+ 
+If passthrough mode is active (True), you'll immediately notice a difference in speed. Responses from the model are 
+generated much more slowly, and tool execution on small models will likely no longer work because the proxy no longer injects tool calls,
+and the model becomes overwhelmed again by the massive increase in JSON clutter.
+
+```bash
+PASS_THROUGH_MODE = False  # Set "False" to unleash ClawCuts power
+```
+
+## BASE PATH FOR SCRIPT RESCUE
+
+Change this to match the root directory where your scripts (if you have some) are stored, that OpenClaw should execute.
+This matches what you tell the LLM for example in your TOOLS.md. See also `EMERGENCY_RESCUES`.
+
+Linux/Pi: "/home/username/" 
+Mac: "/Users/username/"
+Windows: "C:/Users/username/"
 
 ```bash
 EXPECTED_SCRIPT_BASE_PATH = "/home/user/"
 ```
 
-Attention Forcer (End-of-Prompt Injection)
+SYSTEM PROMPT TRIMMING 
+
+If True, the proxy aggressively strips out the skills listed in TRIM_SKILLS before sending 
+the prompt to the model, freeing up its attention span for your custom tools, to prevent cognitive overload.
+Change this list to whatever you feel is (un)necessary.
+
+```bash
+ENABLE_PROMPT_TRIMMING = True
+TRIM_SKILLS = [
+    "clawhub", "gemini", "gh-issues", "github", "healthcheck", 
+    "nano-pdf", "openai-whisper", "skill-creator", "summarize", 
+    "video-frames", "wacli", "weather"
+]
+```
+
+## ATTENTION FORCER (End-of-Prompt Injection)
 
 If True, this injects a strong reminder at the very end of the user's latest message.
 
