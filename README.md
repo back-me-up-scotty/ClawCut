@@ -46,6 +46,8 @@ OpenClaw & ClawCut
 - Connection timeouts or malformed JSON responses.
 - Huge RAM consumption
 
+## BENEFITS USING CLAWCUT
+
 This proxy acts as a "Man-in-the-Middle" between OpenClaw and your local LLM 
 server to optimize the data flow:
 
