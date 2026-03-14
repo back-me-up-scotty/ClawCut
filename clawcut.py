@@ -112,7 +112,8 @@ app = Flask(__name__)
 # The proxy intercepts the traffic and completely overrides the requested model 
 # based on the selected profiles below. 
 # You only need to ensure your OpenClaw provider URL points to the proxy: 
-# "http://127.0.0.1:5000/v1"
+# 192.168.x.x if it's on a remote machine or 127.0.0.1 if ClawCut and OpenClaw 
+# running on the same machine
 
 PROFILES = {
     "LLM1": {
