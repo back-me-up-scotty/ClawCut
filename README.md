@@ -1,4 +1,4 @@
-# **ClawCut Proxy**
+## ClawCut Proxy
 
 OpenClaw is a powerful framework that, by default, sends massive system prompts 
 (often >28,000 characters) and complex tool definitions (JSON tools) to the LLM. 
@@ -9,7 +9,7 @@ often suffer from "Cognitive Overload". This is where ClawCut steps in.
 ClawCut is an experimental proxy to manipulate, inject JSON-Calls and 
 extract JSON clutter from OpenClaw. 
 
-BENEFITS OF USING CLAWCUT:
+## BENEFITS OF USING CLAWCUT:
  
 - Extreme processing latency (slow Time To First Token).
 - Forgetting their identity or available tools.
@@ -40,29 +40,25 @@ server to optimize the data flow:
 -  With the **DEBUG\_MODE** enabled, you can inspect the full "JSON Clutter" 
    sent by OpenClaw to understand exactly what the model is processing.
 
-PERFORMANCE:
+## PERFORMANCE
 - Significantly faster response times (TTFT), as the model has much less text 
   to process upfront.
 - Improved reliability when using and calling scripts (bash or whatever).
 - Robust error handling for stream interruptions or formatting errors.
 
-WHEN TO USE:
+## WHEN TO USE
 - Ideal for small models (7B-8B) running on hardware like Mac (MLX), Windows 
   or Linux.
 - If your model "chats" too much instead of executing commands.
 
-WHEN TO USE WITH CAUTION:
+## WHEN TO USE WITH CAUTION
 - If you are using highly intelligent, large models (14B+) that can handle 
   complex prompts natively. In this case, the proxy can act purely as a logger 
   and format translator without manipulating the content if PASS_THROUGH_MODE = True.
 
-<img width="1021" height="975" alt="Image" src="https://github.com/user-attachments/assets/9810a45d-6697-47a7-9597-c22a59203b4c" />
+## CONFIGURE CLAWCUT
 
-
-
-### ** Configure the Proxy **
-
-CONFIGURATION PROFILES
+**Configuration Profiles**
 
 Edit the clawcut.py file and adjust the profiles. If you have to LLM running, you can switch between both profiles.
 
@@ -90,34 +86,36 @@ PROFILES = {
 }
 ```
 
-Note for OpenClaw Configuration (e.g., openclaw.json): 
+**Note for OpenClaw Configuration (e.g., openclaw.json)**
+
 When using this proxy, the specific model name you configure in OpenClaw does NOT matter.
 The proxy intercepts the traffic and completely overrides the requested model 
 based on the selected profile below. 
+
 You only need to ensure your OpenClaw provider URL points to the proxy: 
 "http://127.0.0.1:5000/v1"
 
 
-Logging & Storage Config
-
-Change flags and location of log file.
+**Logging & Storage Config**
 
 DEBUG_MODE = True prints the full JSON payloads to the console (useful for troubleshooting).
 WRITE_TO_LOGFILE saves the terminal output to the specified PATH_TO_LOGFILE.
 DELETE_LOG_SIZE rotates/deletes the log automatically when it reaches this size to prevent disk full issues.
 
-```bash
-#Linux/Pi: "/home/username/" 
-# Mac: "/Users/username/"
-# Windows: "C:/Users/username/"
+Location/path to logs. Examples:
+ 
+Linux/Pi: "/home/username/" 
+Mac: "/Users/username/"
+Windows: "C:/Users/username/"
 
-PATH_TO_LOGFILE = '/home/user/clawcut.log' 
+```bash
+DEBUG_MODE = True
+WRITE_TO_LOGFILE = True
+PATH_TO_LOGFILE = '/home/nhg/clawcut.log' # Change to your preferred log path
+DELETE_LOG_SIZE = '10 MB' 
 ```
 
-Change this to match the root directory where your scripts (if you have some) are stored, that OpenClaw should execute.
-This matches what you tell the LLM for example in your TOOLS.md. See also EMERGENCY_RESCUES.
-
-SMART AMNESIA MODE
+## SMART AMNESIA MODE
 
 Over time, chat histories get too long for small models to process efficiently.
 If True, the proxy watches for tool calls (specifically the 'exec' tool). 
@@ -129,7 +127,7 @@ preventing infinite loops and keeping the context window and RAM small.
 ENABLE_SMART_AMNESIA = True
 ```
 
-CHAT HISTORY
+## CHAT HISTORY
 
 Amnesia only when the current turn processes a tool result (last message is ‘tool’)
 Example: You exchanged 5 messages without calling a tool. The context is preserved. 
@@ -142,6 +140,36 @@ should be kept.
 ```bash
 CHAT_HISTORY_LIMIT = 10 # Number of messages (excluding system messages) in chat mode
 ```
+
+
+## UNIVERSAL AUTO-DELIVERY
+
+Before OpenClaw 3.12, the proxy had to manually force the LLM to send its text answers to WhatsApp using the 'message' tool.
+For OpenClaw 3.12+, better keep this `FALSE`. 
+
+OpenClaw now has "native reply routing" and should automatically route text answers back to the chat interface.
+Setting this to True on modern OpenClaw versions could cause a "Message failed" conflict.
+
+This is legacy support.
+
+```bash
+FORCE_AUTO_DELIVERY = False
+```
+
+Automatically force text delivery to WhatsApp if the request originated from a Cron job.
+Cron jobs lack a native chat interface, so OpenClaw's native routing won't show the text anywhere.
+
+```bash
+FORCE_CRON_DELIVERY = False
+AUTO_DELIVERY_CHANNEL = "whatsapp"  
+AUTO_DELIVERY_TARGET = "+49123456" 
+```
+
+Important: Since OpenClaw version 2026.3.12 there are issues with the routing of messages triggered by a cron job. 
+ClawCut clearly sees this messages. The issue seems to be on OpenClaw's side. FORCE_CRON_DELIVERY has unfortunately 
+no effect at the moment. OpenClaw ignores it.
+
+
 
 ```bash
 EXPECTED_SCRIPT_BASE_PATH = "/home/user/"
