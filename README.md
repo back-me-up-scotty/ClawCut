@@ -93,7 +93,7 @@ The proxy intercepts the traffic and completely overrides the requested model
 based on the selected profile below. 
 
 You only need to ensure your OpenClaw provider URL points to the proxy: 
-"http://127.0.0.1:5000/v1"
+`"http://127.0.0.1:5000/v1"`
 
 
 **Logging & Storage Config**
