@@ -9,7 +9,7 @@ often suffer from "Cognitive Overload". This is where ClawCut steps in.
 ClawCut is an experimental proxy to manipulate, inject JSON-Calls and 
 extract JSON clutter from OpenClaw. 
 
-## BENEFITS OF USING CLAWCUT:
+## USING CLAWCUT CAN SOLVE FOLLOWING ISSUES:
  
 - Extreme processing latency (slow Time To First Token).
 - Forgetting their identity or available tools.
@@ -74,7 +74,7 @@ PROFILES = {
     "LLM1": {
         "ip": "192.168.0.xxx",
         "port": 8080, 
-        "model_id": 
+        "model_id": "ollama/Qwen2.5-Coder-7B-Instruct-4bit",
         "model_name": "mlx-community/Qwen2.5-Coder-7B-Instruct-4bit"
     },
     "LLM2": {
@@ -118,10 +118,14 @@ DELETE_LOG_SIZE = '10 MB'
 ## SMART AMNESIA MODE
 
 Over time, chat histories get too long for small models to process efficiently.
-If True, the proxy watches for tool calls (specifically the 'exec' tool). 
-Once a tool has been successfully executed, the proxy truncates all chat history 
-prior to that execution. This creates a "fresh start" while keeping the final results,
-preventing infinite loops and keeping the context window and RAM small.
+If enabled, the proxy watches the current turn: when the last message is a tool 
+result (i.e., the model just received the output of an exec call), the proxy 
+truncates all prior chat history. This creates a "fresh start" for the model 
+to formulate its response based on the tool result alone, preventing infinite 
+loops and keeping the context window and RAM small.
+
+Outside of tool execution turns, normal chat history is preserved up to 
+`CHAT_HISTORY_LIMIT` messages (see below).
 
 ```bash
 ENABLE_SMART_AMNESIA = True
@@ -167,7 +171,7 @@ AUTO_DELIVERY_TARGET = "+49123456"
 
 Important: Since OpenClaw version 2026.3.12 there seems to be issues with the routing of messages triggered by a cron job. 
 ClawCut clearly sees this messages. The issue seems to be on OpenClaw's side. FORCE_CRON_DELIVERY has unfortunately 
-no effect at the moment. OpenClaw ignores it.
+no effect at the moment. OpenClaw ignores it. This is legacy support.
 
 ## PASSTHROUGH MODE
 
@@ -285,7 +289,7 @@ sudo apt install python3-pip python3-venv -y
 
 Navigate to your ClawCut folder
 ```bash
-cd ~/ClawCut
+cd /home/user/ClawCut/
 ```
 
 Create a virtual environment
@@ -344,7 +348,7 @@ Activate the environment (PowerShell)
 OR Activate the environment (CMD)
 
 ```bash
-# .\proxy_env\Scripts\activate.bat
+.\proxy_env\Scripts\activate.bat
 ```
 
 Install requirements
@@ -365,19 +369,19 @@ cd clawcut-mlx
 Assign rights to execute ClawCut (for example on Mac & Linux)
 
 ```bash
-chmod +x /home/user/clawcu/clawcut.py
+chmod +x /home/user/ClawCut/clawcut.py
 ```
  
-Once the installation is complete and the environment is activated, you can start the proxy:
+Once the installation is complete and the environment is activated, you can start the proxy (Example on a Linux/Pi):
 
 ```bash
-python clawcut-mlx.py # (Starts with default profile LLM1)
+/home/user/proxy_env/bin/python /home/user/ClawCut/clawcut.py # (Starts with default profile LLM1)
 ```
 ```bash
-python clawcut-mlx.py -LLM2 # (Starts with profile LLM2)
+/home/nhg/proxy_env/bin/python /home/user/ClawCut/clawcut.py -LLM2 # (Starts with profile LLM2)
 ```
 ```bash
-python clawcut-mlx.p -restart # (Kills process and restart with profile LLM1/default)
+/home/nhg/proxy_env/bin/python /home/user/ClawCut/clawcut.py -restart # (Kills process and restart with profile LLM1/default)
 ```
 
 Note: You can always tell if the environment is active by the (proxy_env) prefix in your terminal prompt.
