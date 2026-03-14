@@ -9,6 +9,35 @@ often suffer from "Cognitive Overload". This is where ClawCut steps in.
 ClawCut is an experimental proxy to manipulate, inject JSON-Calls and 
 extract JSON clutter from OpenClaw. 
 
+## NOTE PRIOR TO INSTALLATION
+
+There is no guarantee that ClawCut will work in every 
+configuration or with future OpenClaw updates. It is very likely that 
+this is not the case. ClawCut therefore depends on the community for 
+its further development. 
+
+In other words: Make ClawCut your own. Try to  Share your results.
+
+To give you an idea of the setup I use to run my LLM locally in combination 
+with OpenClaw and ClawCut:
+
+LLM 1:
+
+- MacMini M4 Pro 24 GB RAM
+- mlx-community/Qwen2.5-Coder-7B-Instruct-4bit
+
+LLM 2:
+
+- Windows 10
+- RTX 3060 12 GB VRAM
+- 128 GB RAM
+- Ollama qwen2.5:14b
+
+OpenClaw & ClawCut
+
+- Raspberry 5
+- 16 GB RAM
+
 ## USING CLAWCUT CAN SOLVE FOLLOWING ISSUES:
  
 - Extreme processing latency (slow Time To First Token).
