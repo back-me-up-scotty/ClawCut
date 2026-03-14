@@ -58,27 +58,149 @@ WHEN TO USE WITH CAUTION:
 
 <img width="1021" height="975" alt="Image" src="https://github.com/user-attachments/assets/9810a45d-6697-47a7-9597-c22a59203b4c" />
 
-**How to find & download MLX Models**
 
-You don't need to manually download model files. The mlx-lm server handles everything automatically.
 
-1. **Browse Models:** Go to [Hugging Face](https://huggingface.co/mlx-community) and search for the `mlx-community organization`. They provide pre-converted models optimized for Apple Silicon.
+### **2\. Configure the Proxy)**
 
-2. **Choose your Model:** Copy the repository name (e.g., mlx-community/Qwen2.5-14B-Instruct-4bit).
+Edit the clawcut.py file and adjust the profiles. If you have to LLM running, you can switch between both profiles.
 
-3. **Automatic Download:** When you start the server for the first time using the --model flag, mlx-lm will automatically download the files (several GBs) and cache them locally on your Mac.
+Use `"port": 8080` for example if theres a flask server running. Change port, if neccessary. 
+Use `"port": 11434` for example if Ollama is running. Change port, if neccessary.
+* `IP:` The local IP address of your LLM-Host (e.g., `192.168.0.5`).  
+* `model_id:` The exact model ID used in your openclaw.json.  
+* `model_name:` The name of the model in your openclaw.json.  
+
+
+```bash
+PROFILES = {
+    "LLM1": {
+        "ip": "192.168.0.xxx",
+        "port": 8080, 
+        "model_id": 
+        "model_name": "mlx-community/Qwen2.5-Coder-7B-Instruct-4bit"
+    },
+    "LLM2": {
+        "ip": "192.168.0.xxx",
+        "port": 11434, 
+        "model_id": "ollama/qwen2.5:14b",
+        "model_name": "qwen2.5:14b"
+    }
+}
+```
+
+Change location of log file
+
+```bash
+#Linux/Pi: "/home/username/" 
+# Mac: "/Users/username/"
+# Windows: "C:/Users/username/"
+
+PATH_TO_LOGFILE = '/home/user/clawcut.log' 
+```
 
 ## **Prerequisites**
 
-* **Python 3.x**  
-* **Network Access:** Both devices must be in the same local network.  
-* **MLX-LM Server (on Mac):** The Mac must be configured to listen to network requests.
+To run the ClawCut Universal Proxy, you need Python 3 and two libraries: 
 
-## **Configuration & Network Setup**
+- Flask (to host the proxy server)
+- requests (to communicate with your LLM backend).
 
-### **1\. Prepare the Mac (The LLM Server)**
 
-To allow the Raspberry Pi to talk to your Mac, the MLX server must not only run on localhost. You **must** bind it to your network interface.  
+## **Installation**
+
+It is highly recommended to use a Virtual Environment (venv) to keep your system clean.
+
+1. Linux (Ubuntu / Debian / Raspberry Pi OS)
+Open your terminal and run the following commands:
+
+# Update package list
+sudo apt update
+
+# Install Python pip and venv support
+sudo apt install python3-pip python3-venv -y
+
+# Navigate to your ClawCut folder
+cd ~/ClawCut
+
+# Create a virtual environment
+python3 -m venv proxy_env
+
+# Activate the environment
+source proxy_env/bin/activate
+
+# Install requirements
+pip install Flask requests
+
+2. macOS
+macOS usually comes with Python 3 pre-installed. Open the Terminal app:
+
+# Create a virtual environment
+python3 -m venv proxy_env
+
+# Activate the environment
+source proxy_env/bin/activate
+
+# Install requirements
+pip install Flask requests
+
+3. Windows
+Open PowerShell or Command Prompt (CMD) as Administrator:
+
+# Create a virtual environment
+python -m venv proxy_env
+
+# Activate the environment (PowerShell)
+.\proxy_env\Scripts\Activate.ps1
+
+# OR Activate the environment (CMD)
+# .\proxy_env\Scripts\activate.bat
+
+# Install requirements
+pip install Flask requests
+
+How to install and start the ClawCut
+
+Clone the repository
+
+```bash
+git clone [https://github.com/back-me-up-scotty/ClawCut.git](https://github.com/back-me-up-scotty/ClawCut.git)  
+cd clawcut-mlx
+```
+Assign rights to execute ClawCut (for example on Mac & Linux)
+
+```bash
+chmod +x /home/user/clawcu/clawcut.py
+```
+ 
+Once the installation is complete and the environment is activated, you can start the proxy:
+
+```bash
+python clawcut-mlx.py # (Starts with default profile LLM1)
+```
+```bash
+python clawcut-mlx.py -LLM2 # (Starts with profile LLM2)
+```
+```bash
+python clawcut-mlx.p -restart # (Kills process and restart with profile LLM1/default)
+```
+
+Note: You can always tell if the environment is active by the (proxy_env) prefix in your terminal prompt.
+
+
+USING A MLX-Model for Mac
+
+How to find & download MLX Models
+
+You don't need to manually download model files. The mlx-lm server handles everything automatically.
+
+1. Browse Models: Go to [Hugging Face](https://huggingface.co/mlx-community) and search for the `mlx-community organization`. They provide pre-converted models optimized for Apple Silicon.
+
+2. Choose your Model:Copy the repository name (e.g., mlx-community/Qwen2.5-14B-Instruct-4bit).
+
+3. Automatic Download: When you start the server for the first time using the --model flag, mlx-lm will automatically download the files (several GBs) and cache them locally on your Mac.
+
+If your OpenClaw installation is on a different computer (such as a Raspberry Pi) than your Mac's LLM, then you must allow the Raspberry Pi to talk to your LLM host, 
+the MLX server must not only run on localhost. You **must** bind it to your network interface.  
 Start the server on your Mac with the `--host 0.0.0.0` flag: 
 
 ```bash
@@ -98,50 +220,7 @@ If the connection is still refused (Error 502/61), your macOS firewall might be 
 * Either disable it temporarily for testing or click **Options** and ensure that your Python binary (inside your `mlx_env`) is allowed to receive incoming connections.  
 * **Test connection from Pi:** Run `nc -zv [MAC_IP] 8080\`. It should say "succeeded".
 
-### **2\. Configure the Proxy (on Raspberry Pi)**
-
-Edit the clawcut-mlx.py file and adjust the constants:
-
-* `MAC_IP:` The local IP address of your Mac (e.g., `192.168.0.5`).  
-* `OPENCLAW_MODEL_ID:` The exact model ID used in your openclaw.json.  
-* `MLX_MODEL_IDENTIFIER:` The name of the model loaded on your Mac.  
-* `DEBUG_MODE:` Set to True to see the raw communication and JSON clutter.
-
-## **Installation**
-
-### **1\. Clone the repository**
-
-```bash
-git clone [https://github.com/back-me-up-scotty/ClawCut.git](https://github.com/back-me-up-scotty/ClawCut.git)  
-cd clawcut-mlx
-```
-
-### **2\. Create a Virtual Environment (on MAC / Recommended)**
-
-```bash
-python3 -m venv proxy env  
-source proxy_env/bin/activate
-```
-
-### **3\. Install Dependencie (on MAC)s**
-
-```bash
-pip install flask requests
-```
-
-### **3\. Install Dependencies (on Pi)**
-```bash
-chmod +x /home/user/clawcut-mlx/clawcut-mlx.py
-```
-
-## **Usage**
-
-Start the proxy on your Raspberry Pi:  
-
-```bash
-python3 clawcut-mlx.py
-```
-
+ 
 ### **OpenClaw Configuration (openclaw.json)**
 
 Point your OpenClaw provider to the proxy. If OpenClaw and the Proxy are on the same Pi, use the following configuration:  
