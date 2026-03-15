@@ -21,8 +21,8 @@ The specific model name in `openclaw.json` is irrelevant — ClawCut always over
 
 There is no guarantee that ClawCut will work in every 
 configuration or with future OpenClaw updates. It is very likely that 
-this is not the case. ClawCut therefore depends on the community for 
-its further development. 
+this is not the case. ClawCut therefore relies on the community 
+to continue developing and keep pace with Open Claw's rapid update cycles. 
 
 ---
 
