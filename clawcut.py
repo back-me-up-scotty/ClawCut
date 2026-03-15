@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-ClawCut - Universal LLM Bridge & Proxy (BETA) - v. 3.1.9
+ClawCut - Universal LLM Bridge & Proxy (BETA) - v. 3.2.0
 --------------------------------------------------------------------------------
 LICENSE: ClawCut Personal & Non-Commercial License
 Copyright (c) 2026 Niels Gerhardt
@@ -77,7 +77,7 @@ WHEN NOT TO USE:
   PASS_THROUGH_MODE = True.
 
 HOW TO START:
-- See README.md on GitHub. https://github.com/back-me-up-scotty/ClawCut
+- See README.md on GitHub. 
 
 --KNOWN ISSUES -----------------------------------------------------------------
 - Since OpenClaw version 2026.3.12 there are issues with the routing of messages 
@@ -110,48 +110,94 @@ app = Flask(__name__)
 # Note for OpenClaw Configuration (e.g., openclaw.json or openclaw.conf):
 # When using this proxy, the specific model name you configure in OpenClaw does NOT matter.
 # The proxy intercepts the traffic and completely overrides the requested model 
-# based on the selected profiles below. 
-# You only need to ensure your OpenClaw provider URL points to the proxy: 
-# 192.168.x.x if it's on a remote machine or 127.0.0.1 if ClawCut and OpenClaw 
-# running on the same machine
+# based on the selected profile below. 
+# 192.168.x.x if it's on a remote machine or 127.0.0.1 if ClawCut and 
+# OpenClaw running on the same machine
 
 PROFILES = {
     "LLM1": {
-        "ip": "192.168.0.xxx",
+        "ip": "192.168.0.xxx", # No api_key, no base_url → local, uses http://ip:port/v1/chat/completions
         "port": 8090,
         "model_id": "ollama/Qwen2.5-Coder-7B-Instruct-4bit",
-        "model_name": "mlx-community/Qwen2.5-Coder-7B-Instruct-4bit"
+        "model_name": "mlx-community/Qwen2.5-Coder-7B-Instruct-4bit",
+        "pass_through": False       # Full proxy intervention for small local models
     },
     "LLM2": {
         "ip": "192.168.0.xxx",
         "port": 11434,
         "model_id": "ollama/qwen2.5:14b",
-        "model_name": "qwen2.5:14b"
+        "model_name": "qwen2.5:14b",
+        "pass_through": "small"     # Format translation only, no injection/manipulation
+    },
+    "LLM3": {
+        # Examaple Cloud profile
+        # baseUrl from openclaw.json → becomes the direct LLM target
+        "base_url": "https://integrate.api.nvidia.com/v1/chat/completions",
+        # apiKey from openclaw.json → used in Authorization header
+        "api_key": "nvapi-",
+        # model id from openclaw.json models[].id
+        "model_id": "moonshotai/kimi-k2.5",
+        # model name from openclaw.json models[].name (or same as model_id)
+        "model_name": "moonshotai/kimi-k2.5",
+        "pass_through": "full",      # Truly transparent: raw forward + logging only
+        # headers from openclaw.json → empty here, but can hold extras
+        "headers": {},
+       
     }
 }
 
 # Default Profile (if no flag is provided)
 SELECTED_PROFILE = "LLM1"
 
-# Parse Profile from command line
-# Use the '-LLM1' or '-LLM2' flag when starting the proxy to switch server configurations.
-# Example: python clawcut-mlx.py -LLM2
-if "-LLM1" in sys.argv:
-    SELECTED_PROFILE = "LLM1"
-elif "-LLM2" in sys.argv:
-    SELECTED_PROFILE = "LLM2"
+# Parse Profile from command line — dynamically matches any -LLMx flag defined in PROFILES.
+# Use the '-LLM1', '-LLM2', '-LLM3' etc. flag when starting the proxy.
+# Example: python clawcut-mlx.py -LLM3 -restart
+for _arg in sys.argv[1:]:
+    if _arg.startswith('-') and _arg[1:] in PROFILES:
+        SELECTED_PROFILE = _arg[1:]
+        break
 
 cfg = PROFILES[SELECTED_PROFILE]
 
+
 # Active Server Config
-LLM_SERVER_URL = f"http://{cfg['ip']}:{cfg['port']}/v1/chat/completions"
+# If profile defines base_url, use it directly (cloud providers).
+# Otherwise build from ip/port (local servers).
+if 'base_url' in cfg:
+    LLM_SERVER_URL = cfg['base_url']
+else:
+    LLM_SERVER_URL = f"http://{cfg['ip']}:{cfg['port']}/v1/chat/completions"
+
 OPENCLAW_MODEL_ID = cfg['model_id']
 LLM_MODEL_IDENTIFIER = cfg['model_name']
+
+# Build request headers. Local servers need no auth. Cloud providers need Authorization + optional extras.
+LLM_REQUEST_HEADERS = {"Content-Type": "application/json"}
+_api_key = cfg.get('api_key') or cfg.get('apiKey')
+if _api_key:
+    LLM_REQUEST_HEADERS["Authorization"] = f"Bearer {_api_key}"
+if 'headers' in cfg:
+    LLM_REQUEST_HEADERS.update(cfg['headers'])
+
+# Derive pass-through mode from profile.
+
+# Derive pass-through mode from profile.
+# False      → full proxy intervention (injection, amnesia, trimming, rescue)
+# "small"    → existing PASS_THROUGH_MODE: format translation only, no manipulation
+# "full"     → raw transparent forward, only logging is active
+_pass_through_cfg = cfg.get('pass_through', False)
+PASS_THROUGH_MODE = (_pass_through_cfg == "small")
+FULL_PASS_THROUGH_MODE = (_pass_through_cfg == "full")
+
+# Logging & Storage Config
 
 # Logging & Storage Config
 # DEBUG_MODE = True prints the full JSON payloads to the console (useful for troubleshooting).
 # WRITE_TO_LOGFILE saves the terminal output to the specified PATH_TO_LOGFILE.
 # DELETE_LOG_SIZE rotates/deletes the log automatically when it reaches this size to prevent disk full issues.
+# Linux/Pi: "/home/username/" 
+# Mac: "/Users/username/"
+# Windows: "C:/Users/username/"
 DEBUG_MODE = True
 WRITE_TO_LOGFILE = True
 PATH_TO_LOGFILE = '/home/user/clawcut.log' # Change to your preferred log path
@@ -196,24 +242,18 @@ AUTO_DELIVERY_TARGET = "+49123456"
 # ==========================================
 # --- PROXY BEHAVIOR ---
 # ==========================================
-
-# Pure Pass-Through Mode: If True, completely disables all proxy logic (trimming, amnesia, auto-delivery, bash-rescue).
-# The proxy will only log traffic and forward the exact JSON between OpenClaw and the LLM, maintaining format compatibility.
-# Useful for powerful models (e.g., 14B, 70B, GPT-4) that don't need workarounds.
-#
-# If passthrough mode is active (True), you'll immediately notice a difference in speed. Responses from the model are 
-# generated much more slowly, and tool execution on small models will likely no longer work because the proxy no longer injects tool calls,
-# and the model becomes overwhelmed again by the massive increase in JSON clutter.
-# 
-PASS_THROUGH_MODE = False  #Set "False" to unleash ClawCuts power
+ 
 
 # BASE PATH FOR SCRIPT RESCUE
 # Change this to match the root directory where your scripts (if you have some) are stored, that OpenClaw should execute.
 # This matches what you tell the LLM for example in your TOOLS.md. See also EMERGENCY_RESCUES.
+# Linux/Pi: "/home/username/" 
+# Mac: "/Users/username/"
+# Windows: "C:/Users/username/"
 EXPECTED_SCRIPT_BASE_PATH = "/home/user/"
 
 # Default message sent to the user when an audio file is delivered
-AUDIO_DELIVERY_MESSAGE = "Here is your audio."
+AUDIO_DELIVERY_MESSAGE = "Here is your audio"
 
 # 1. System Prompt Trimming (Cognitive Overload Protection)
 # If True, the proxy aggressively strips out the skills listed in TRIM_SKILLS before sending 
@@ -228,7 +268,7 @@ TRIM_SKILLS = [
 # 2. Attention Forcer (End-of-Prompt Injection)
 # If True, this injects a strong reminder at the very end of the user's latest message.
 ENABLE_ATTENTION_FORCER = True
-ATTENTION_FORCER_TEXT = "\n\n[SYSTEM-REMINDER: NEVER respond to requests for local scripts, data, or services directly with text! You MUST use the ‘exec’ tool FIRST!]"
+ATTENTION_FORCER_TEXT = "\n\n[SYSTEM REMINDER: NEVER respond directly with text to requests regarding local scripts, data, or services! You MUST use the ‘exec’ tool FIRST!]"
 
 # 3. Emergency Rescue (Catch & Convert) - Where the tool call magic happens
 # Intercepts specific model texts and converts them into hidden 'exec' tool calls.
@@ -237,20 +277,26 @@ ATTENTION_FORCER_TEXT = "\n\n[SYSTEM-REMINDER: NEVER respond to requests for loc
 #
 # Scripts down below are examples how to use. These are my own script I want OpenClaw to call. Change to
 # your scripts if you have some and set ENABLE_EMERGENCY_RESCUE = True
+#
+# ENABLE_INPUT_RESCUE takes precedence over the LLM—it scans the incoming user message and bypasses the 
+# LLM entirely, going straight to the exec call without even consulting the LLM.
+# ENABLE_EMERGENCY_RESCUE intervenes after the LLM—it scans the LLM’s text response in `generate()` 
+# and converts recognized keywords into an `exec` call if the model forgot to use the tool.
+
 ENABLE_EMERGENCY_RESCUE = True
 ENABLE_INPUT_RESCUE = False
 EMERGENCY_RESCUES = [
     {
-        "keywords": ["weather", "tell"], 
+        "keywords": ["wetter", "how"], 
         "command": 'bash /home/user/weather.sh "New York"'
     },
     {
         "keywords": ["diesel", "price"], 
-        "command": 'bash /home/user/.openclaw/workspace/skills/diesel-price/diesel_price.sh'
+        "command": 'bash /home/nhg/.openclaw/workspace/skills/diesel-price/diesel_price.sh'
     },
      {
-        "keywords": ["backup", "create"], 
-        "command": 'bash /home/user/.openclaw/workspace/skills/system_control/run_bmus.sh'
+        "keywords": ["backup", "start"], 
+        "command": 'bash /home/nhg/.openclaw/workspace/skills/system_control/run_bmus.sh'
     }
 ]
 # ==========================================
@@ -349,6 +395,7 @@ def proxy():
         original_messages = ollama_data.get('messages', [])
         requested_model = ollama_data.get('model', OPENCLAW_MODEL_ID)
         
+        # NACHHER:
         if DEBUG_MODE:
             print(f"\n\n[DEBUG] {'='*60}")
             print(f"[DEBUG] REQUEST RECEIVED: {datetime.now().strftime('%H:%M:%S')}")
@@ -358,6 +405,57 @@ def proxy():
                 print(f"{original_messages[-1]['content']}")
                 print("-" * 40)
 
+        # --- FULL PASS-THROUGH MODE ---
+        # Truly transparent: forward raw request body to LLM, stream response back unchanged.
+        # Only logging is active. No format translation, no injection, no manipulation.
+        # Exception: model name is always overridden from the active profile, since openclaw.json
+        # always sends the local placeholder model name regardless of which profile is active.
+        if FULL_PASS_THROUGH_MODE:
+            passthrough_data = dict(ollama_data)
+            passthrough_data['model'] = LLM_MODEL_IDENTIFIER
+            passthrough_data.pop('tool_choice', None)
+            passthrough_data.pop('options', None)
+            # Filter tool-result messages — these cause jinja2 errors on cloud APIs
+            if 'messages' in passthrough_data:
+                passthrough_data['messages'] = [
+                    m for m in passthrough_data['messages']
+                    if m.get('role') != 'tool' and m.get('content', '') != ''
+                ]
+            if DEBUG_MODE:
+                print(f"[DEBUG] FULL_PASS_THROUGH_MODE active — forwarding raw request.")
+                print(json.dumps(passthrough_data, indent=2, ensure_ascii=False))
+                print(f"[DEBUG] {'-'*60}")
+            raw_req = requests.post(LLM_SERVER_URL, json=passthrough_data, headers=LLM_REQUEST_HEADERS, stream=True, timeout=600)
+            if raw_req.status_code != 200:
+                return json.dumps({"error": f"LLM Server Error {raw_req.status_code}", "details": raw_req.text}), 502
+            def full_passthrough_stream():
+                for chunk in raw_req.iter_lines():
+                    if not chunk:
+                        continue
+                    line = chunk.decode('utf-8').strip()
+                    if DEBUG_MODE:
+                        print(f"[FULL-PT] {line}")
+                    if not line.startswith("data: "):
+                        continue
+                    data_str = line[6:]
+                    if data_str == "[DONE]":
+                        yield json.dumps({"message": {"content": ""}, "done": True}) + "\n"
+                        break
+                    try:
+                        data = json.loads(data_str)
+                        content = ""
+                        choices = data.get("choices", [])
+                        if choices:
+                            delta = choices[0].get("delta", {})
+                            content = delta.get("content", "")
+                        ollama_chunk = {"message": {"role": "assistant", "content": content}, "done": False}
+                        yield json.dumps(ollama_chunk) + "\n"
+                    except Exception:
+                        continue
+            print(f"[DEBUG] Finished in {time.time() - start_time:.2f}s | FULL_PASS_THROUGH")
+            return Response(full_passthrough_stream(), content_type='application/x-ndjson')
+
+       
         # --- INPUT RESCUE (SHORT-CIRCUITING) ---
         # Scans incoming messages (e.g. from Cron jobs) for keywords to bypass the LLM entirely.
         # ONLY trigger if the LAST message is from the 'user'. 
@@ -508,7 +606,7 @@ def proxy():
             print(json.dumps(openai_payload, indent=2, ensure_ascii=False))
             print(f"[DEBUG] {'-'*60}")
 
-        req = requests.post(LLM_SERVER_URL, json=openai_payload, stream=True, timeout=600)
+        req = requests.post(LLM_SERVER_URL, json=openai_payload, headers=LLM_REQUEST_HEADERS, stream=True, timeout=600)
         if req.status_code != 200:
             return json.dumps({"error": f"LLM Server Error {req.status_code}", "details": req.text}), 502
 
@@ -721,11 +819,14 @@ if __name__ == '__main__':
         kill_other_instances()
 
     print(f"==========================================")
-    print(f"ClawCut Universal Proxy (V3.1.9)")
-    print(f"PROFILE SELECTED: {SELECTED_PROFILE.upper()} ({cfg['ip']}:{cfg['port']})")
+    print(f"ClawCut Universal Proxy (V3.2.0)")
+    _profile_target = cfg.get('base_url', f"{cfg.get('ip', '?')}:{cfg.get('port', '?')}")
+    print(f"PROFILE SELECTED: {SELECTED_PROFILE.upper()} ({_profile_target})")
     print(f"MODEL USED: {cfg['model_name']}")
     print(f"PASS_THROUGH_MODE = {PASS_THROUGH_MODE}")
-    if not PASS_THROUGH_MODE:
+    _pt_label = "FULL" if FULL_PASS_THROUGH_MODE else ("SMALL" if PASS_THROUGH_MODE else "OFF")
+    print(f"PASS_THROUGH_MODE = {_pt_label}")
+    if not PASS_THROUGH_MODE and not FULL_PASS_THROUGH_MODE:
         print(f"SMART_AMNESIA = {ENABLE_SMART_AMNESIA}")
         print(f"AUTO_DELIVERY = {FORCE_AUTO_DELIVERY} (Cron: {FORCE_CRON_DELIVERY}) -> {AUTO_DELIVERY_CHANNEL}:{AUTO_DELIVERY_TARGET}")
     if WRITE_TO_LOGFILE: print(f"LOGGING TO: {PATH_TO_LOGFILE} (Max Size: {DELETE_LOG_SIZE})")
