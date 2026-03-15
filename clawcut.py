@@ -395,7 +395,7 @@ def proxy():
         original_messages = ollama_data.get('messages', [])
         requested_model = ollama_data.get('model', OPENCLAW_MODEL_ID)
         
-        # NACHHER:
+        
         if DEBUG_MODE:
             print(f"\n\n[DEBUG] {'='*60}")
             print(f"[DEBUG] REQUEST RECEIVED: {datetime.now().strftime('%H:%M:%S')}")
