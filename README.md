@@ -385,7 +385,7 @@ If the connection is refused (Error 502), your macOS firewall may be blocking th
 
 ```python
 "LLM1": {
-    "ip": "192.168.0.184",   # Your Mac's local IP
+    "ip": "192.168.0.xxx",   # Your Mac's local IP
     "port": 8090,
     "model_id": "ollama/Qwen2.5-Coder-7B-Instruct-4bit",
     "model_name": "mlx-community/Qwen2.5-Coder-7B-Instruct-4bit",
@@ -407,4 +407,4 @@ Use `"pass_through": False` for 7B/8B models (they need trimming, amnesia, and t
 
 - The first request after a `/reset` or session start is always slower — the full context window is processed for the first time. From the second request onward, response times drop significantly.
 - ClawCut is experimental. OpenClaw updates may break compatibility. Fork it, adapt it, share your results.
-- Community: https://discord.com/invite/clawd
+
