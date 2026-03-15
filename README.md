@@ -303,7 +303,7 @@ AUTO_DELIVERY_TARGET = "+49123456"
 
 ---
 
-## CLOUD PROVIDER SETUP (NVIDIA / OpenAI)
+## CLOUD PROVIDER SETUP
 
 For cloud profiles, `openclaw.json` stays unchanged. All connection details live in the ClawCut profile:
 
