@@ -337,11 +337,46 @@ MLX is Apple's machine learning framework optimized for Apple Silicon (M1/M2/M3/
 
 You don't need to manually download model files. The `mlx_lm` server handles everything automatically.
 
-1. **Browse Models:** Go to [Hugging Face](https://huggingface.co/mlx-community) and search for the `mlx-community` organization. They provide pre-converted models optimized for Apple Silicon.
+1. **Browse Models:** Go to [Hugging Face](https://huggingface.co/mlx-community) and search for the `mlx-community` organization. They provide pre-converted models optimized for Apple Silicon. Some models need an account/login to be able to download.
 
 2. **Choose your Model:** Copy the repository name (e.g., `mlx-community/Qwen2.5-Coder-7B-Instruct-4bit`).
 
 3. **Automatic Download:** When you start the server for the first time using the `--model` flag, `mlx_lm` will automatically download the files (several GBs) and cache them locally on your Mac.
+
+### Hugging Face Login (for gated models)
+
+Some models (e.g., Llama, Mistral, Gemma) require you to accept a license agreement on Hugging Face before downloading. If you try to download a gated model without logging in, you'll get a 401 or access denied error.
+
+**Step 1 — Create a free account**
+
+Go to [https://huggingface.co](https://huggingface.co) and sign up.
+
+**Step 2 — Accept the model license**
+
+Open the model page on Hugging Face and click the "Agree and access repository" button if one is shown. Without this step, the download will fail even with a valid token.
+
+**Step 3 — Create an Access Token**
+
+Go to [https://huggingface.co/settings/tokens](https://huggingface.co/settings/tokens) and create a new token. A **Read** token is sufficient for downloading models.
+
+**Step 4 — Log in on your Mac**
+
+Install the Hugging Face CLI and log in:
+
+```bash
+pip install huggingface_hub
+huggingface-cli login
+```
+
+Paste your token when prompted. It will be stored locally and used automatically by `mlx_lm` for all future downloads.
+
+**Step 5 — Verify**
+
+```bash
+huggingface-cli whoami
+```
+
+This should print your username. You can now start the MLX server as normal — gated models will download without issues.
 
 **Model size guide (choose based on your RAM):**
 
@@ -356,6 +391,8 @@ You don't need to manually download model files. The `mlx_lm` server handles eve
 ```bash
 pip install mlx-lm
 ```
+
+---
 
 ### Starting the Server
 
@@ -373,6 +410,8 @@ python -m mlx_lm.server --model mlx-community/Qwen2.5-Coder-7B-Instruct-4bit --h
 
 ⚠️ Replace the model name with the one you actually want to use. Make sure it fits your available RAM (see table above).
 
+---
+
 ### macOS Firewall
 
 If the connection is refused (Error 502), your macOS firewall may be blocking the port.
@@ -380,6 +419,8 @@ If the connection is refused (Error 502), your macOS firewall may be blocking th
 - Go to **System Settings → Network → Firewall**
 - Either disable it temporarily for testing, or click **Options** and ensure your Python binary (inside your `mlx_env` or `venv`) is allowed to receive incoming connections
 - Test the connection from the Pi: `nc -zv [MAC_IP] 8090` — it should say "succeeded"
+
+---
 
 ### Profile Configuration for MLX
 
@@ -394,6 +435,8 @@ If the connection is refused (Error 502), your macOS firewall may be blocking th
 ```
 
 Use `"pass_through": False` for 7B/8B models (they need trimming, amnesia, and tool injection to work reliably). Use `"pass_through": "small"` for 14B+ if you want less intervention.
+
+---
 
 ### Performance Notes
 
