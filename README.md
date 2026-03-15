@@ -1,13 +1,21 @@
-## ClawCut Proxy
+# ClawCut Universal LLM Bridge & Proxy 3.2.0
 
-OpenClaw is a powerful framework that, by default, sends massive system prompts 
-(often >28,000 lines) and complex tool definitions (JSON tools) to the LLM. 
-While large cloud models or high-end local models (14B etc.) handle this well, 
-small models (7B, 8B) running on limited hardware (Mac/MLX or Raspberry Pi) 
-often suffer from "Cognitive Overload". This is where ClawCut steps in.
+ClawCut is a proxy that sits between OpenClaw and any LLM — local or cloud. It solves the "Cognitive Overload" problem for small models, translates between API formats, and lets you switch between completely different backends (local Ollama, local MLX, NVIDIA cloud, OpenAI, etc.) by simply restarting with a different profile flag. Your `openclaw.json` never needs to change.
 
-ClawCut is an experimental proxy to manipulate, inject JSON-Calls and 
-extract JSON clutter from OpenClaw. 
+---
+
+## HOW IT WORKS
+
+OpenClaw always sends to `http://127.0.0.1:5000/v1`. ClawCut intercepts, manipulates or forwards the request based on the active profile, and returns the response in the format OpenClaw expects.
+
+```
+OpenClaw → ClawCut Proxy → Local LLM (MLX / Ollama)
+                         → Cloud API  (NVIDIA / OpenAI / etc.)
+```
+
+The specific model name in `openclaw.json` is irrelevant — ClawCut always overrides it with the active profile's model.
+
+---
 
 ## NOTE PRIOR TO INSTALLATION
 
@@ -16,493 +24,387 @@ configuration or with future OpenClaw updates. It is very likely that
 this is not the case. ClawCut therefore depends on the community for 
 its further development. 
 
-In other words: Make ClawCut your own. Try to  Share your results.
-
-To give you an idea of the setup I use to run my LLM locally in combination 
-with OpenClaw and ClawCut:
-
-LLM 1:
-
-- MacMini M4 Pro 24 GB RAM
-- mlx-community/Qwen2.5-Coder-7B-Instruct-4bit
-
-LLM 2:
-
-- Windows 10
-- RTX 3060 12 GB VRAM
-- 128 GB RAM
-- Ollama qwen2.5:14b
-
-OpenClaw & ClawCut
-
-- Raspberry 5
-- 16 GB RAM
-
-## USING CLAWCUT CAN SOLVE FOLLOWING ISSUES:
- 
-- Extreme processing latency (slow Time To First Token).
-- Forgetting their identity or available tools.
-- Hallucinating text answers instead of executing local scripts.
-- Connection timeouts or malformed JSON responses.
-- Huge RAM consumption
-
-## BENEFITS USING CLAWCUT
-
-This proxy acts as a "Man-in-the-Middle" between OpenClaw and your local LLM 
-server to optimize the data flow:
-
--  PROMPT TRIMMING: Automatically removes unused default skills from the system 
-   prompt to keep the context window small and focused.
--  SMART AMNESIA: Intelligently truncates chat history after successful tool 
-   executions to free up "mental space" for the model.
--  ATTENTION FORCER: Injects a reminder at the very end of the user query to 
-   ensure the model prioritizes tool usage.
--  TOOL FORCER: Injects keywords for tool calling and points to commands.
--  INPUT RESCUE: Short-circuits known incoming requests (like Cron-Jobs) to 
-   bypass LLM latency and ensure 100% reliability for automated tasks.
--  BASH-RESCUE: Detects poorly formatted script calls (e.g., naked code blocks) 
-   and converts them into valid OpenClaw tool calls on the fly.
--  Automatically filters dynamic timestamps from system prompts to enable near-instant 
-   responses via hardware caching.
--  Translates between OpenAI-compatible streams (MLX) and the Ollama/NDJSON 
-   format expected by OpenClaw.
--  Real-time console output of prefill duration, token count, and generation 
-   speed (tokens per second).
--  With the **DEBUG\_MODE** enabled, you can inspect the full "JSON Clutter" 
-   sent by OpenClaw to understand exactly what the model is processing.
-
-## PERFORMANCE
-- Significantly faster response times (TTFT), as the model has much less text 
-  to process upfront.
-- Improved reliability when using and calling scripts (bash or whatever).
-- Robust error handling for stream interruptions or formatting errors.
+---
 
 ## WHEN TO USE
 - Ideal for small models (7B-8B) running on hardware like Mac (MLX), Windows 
   or Linux.
 - If your model "chats" too much instead of executing commands.
 
+---
+
 ## WHEN TO USE WITH CAUTION
 - If you are using highly intelligent, large models (14B+) that can handle 
   complex prompts natively. In this case, the proxy can act purely as a logger 
   and format translator without manipulating the content if `PASS_THROUGH_MODE = True`.
+---
 
-## CONFIGURE CLAWCUT
+## PROBLEMS CLAWCUT SOLVES
 
-**Configuration Profiles**
+- Extreme processing latency (slow Time To First Token) on small models
+- Models forgetting their identity or available tools
+- Models hallucinating text instead of executing scripts
+- Connection timeouts or malformed JSON responses
+- Huge RAM consumption from massive system prompts
+- Format incompatibility between OpenAI-compatible APIs and Ollama/NDJSON
 
-Edit the clawcut.py file and adjust the profiles. If you have to LLM running, you can switch between both profiles.
+---
 
-Use `"port": 8080` for example if theres a flask server running. Change port, if neccessary. 
-Use `"port": 11434` for example if Ollama is running. Change port, if neccessary.
-* `IP:` The (local) IP address of your LLM-Host (e.g., `192.168.0.5` if it's on a remote machine or `127.0.0.1` if ClawCut and OpenClaw running on the same machine ).  
-* `model_id:` The exact model ID used in your openclaw.json.  
-* `model_name:` The name of the model in your openclaw.json.  
+## FEATURES
 
+- **PROFILE SWITCHING** — Switch between any number of local or cloud LLM backends using a CLI flag. No changes to `openclaw.json` required.
+- **PASS-THROUGH MODES** — Three levels: full proxy intervention, small (format-only), or full cloud passthrough.
+- **CLOUD PROVIDER SUPPORT** — Connect to NVIDIA, OpenAI, or any OpenAI-compatible API via profile configuration.
+- **PROMPT TRIMMING** — Strips unused skills from the system prompt to keep context small.
+- **SMART AMNESIA** — Truncates chat history after tool executions to free context for the model.
+- **ATTENTION FORCER** — Injects a reminder at the end of user messages to enforce tool usage.
+- **INPUT RESCUE** — Short-circuits known incoming requests (Cron jobs) to bypass LLM latency.
+- **BASH RESCUE** — Converts poorly formatted script calls into valid OpenClaw tool calls on the fly.
+- **STREAM TRANSLATION** — Translates OpenAI SSE streams (cloud/MLX) to Ollama NDJSON format.
+- **DEBUG MODE** — Full JSON payload logging to console and logfile.
+
+---
+
+## SETUP
+
+### Hardware Reference
+
+To give you an idea of the setup I use to run my LLM locally in combination with OpenClaw and ClawCut:
+
+| Role | Example |
+|------|---------|
+| LLM1 (local, fast) | MacMini M4 Pro 24 GB · mlx-community/Qwen2.5-Coder-7B-Instruct-4bit |
+| LLM2 (local, large) | Windows · RTX 3060 12 GB VRAM· Ollama qwen2.5:14b |
+| LLM3 (cloud) | NVIDIA NIM API · moonshotai/kimi-k2.5 |
+| Proxy host + OpenClaw | Raspberry Pi 5 · 16 GB RAM |
+
+### Prerequisites
+
+Python 3, Flask, requests:
 
 ```bash
+# Linux / Raspberry Pi
+sudo apt update && sudo apt install python3-pip python3-venv -y
+cd /home/user/ClawCut/
+python3 -m venv proxy_env
+source proxy_env/bin/activate
+pip install Flask requests
+
+# macOS
+python3 -m venv proxy_env && source proxy_env/bin/activate && pip install Flask requests
+
+# Windows (PowerShell)
+python -m venv proxy_env && .\proxy_env\Scripts\Activate.ps1 && pip install Flask requests
+```
+
+---
+
+## OPENCLAW CONFIGURATION
+
+Point OpenClaw to the proxy. The `openclaw.json` stays exactly like this regardless of which profile you start ClawCut with:
+
+```json
+"models": {
+  "mode": "merge",
+  "providers": {
+    "ollama": {
+      "baseUrl": "http://127.0.0.1:5000/v1",
+      "apiKey": "ollama-local",
+      "api": "ollama",
+      "models": [
+        {
+          "id": "ollama/qwen2.5:14b",
+          "name": "qwen 2.5 14b",
+          "reasoning": false,
+          "input": ["text"],
+          "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 },
+          "contextWindow": 16384,
+          "maxTokens": 4096,
+          "compat": { "supportsDeveloperRole": false }
+        }
+      ]
+    }
+  }
+},
+"agents": {
+  "defaults": {
+    "model": { "primary": "ollama/qwen2.5:14b" }
+  }
+}
+```
+
+The only value that matters here is `"baseUrl": "http://127.0.0.1:5000/v1"`. Everything else — model name, API key, context window — is ignored and overridden by the active ClawCut profile.
+
+---
+
+## PROFILE CONFIGURATION
+
+Edit the `PROFILES` dict in `clawcut.py`. Profiles support both local servers and cloud APIs.
+
+```python
 PROFILES = {
+
+    # Local MLX (Mac) — full proxy intervention
     "LLM1": {
-        "ip": "192.168.0.xxx",
-        "port": 8080, 
+        "ip": "192.168.0.184",
+        "port": 8090,
         "model_id": "ollama/Qwen2.5-Coder-7B-Instruct-4bit",
-        "model_name": "mlx-community/Qwen2.5-Coder-7B-Instruct-4bit"
+        "model_name": "mlx-community/Qwen2.5-Coder-7B-Instruct-4bit",
+        "pass_through": False
     },
+
+    # Local Ollama — format translation only, no content manipulation
     "LLM2": {
-        "ip": "192.168.0.xxx",
-        "port": 11434, 
+        "ip": "192.168.0.167",
+        "port": 11434,
         "model_id": "ollama/qwen2.5:14b",
-        "model_name": "qwen2.5:14b"
+        "model_name": "qwen2.5:14b",
+        "pass_through": "small"
+    },
+
+    # Cloud API (NVIDIA / OpenAI / etc.) — transparent forward
+    "LLM3": {
+        "base_url": "https://integrate.api.nvidia.com/v1/chat/completions",
+        "api_key": "nvapi-yourkey",
+        "model_id": "moonshotai/kimi-k2.5",
+        "model_name": "moonshotai/kimi-k2.5",
+        "headers": {},
+        "pass_through": "full"
     }
 }
 ```
 
-**Note for OpenClaw Configuration (e.g., openclaw.json)**
+### Profile Fields
 
-When using this proxy, the specific model name you configure in OpenClaw does NOT matter.
-The proxy intercepts the traffic and completely overrides the requested model 
-based on the selected profile below. 
+| Field | Required for | Description |
+|-------|--------------|-------------|
+| `ip` + `port` | Local servers | ClawCut builds the URL as `http://ip:port/v1/chat/completions` |
+| `base_url` | Cloud providers | Full endpoint URL, used as-is |
+| `api_key` | Cloud providers | Added as `Authorization: Bearer` header |
+| `headers` | Optional | Extra HTTP headers merged into the request |
+| `model_id` | All | Model identifier sent to the LLM |
+| `model_name` | All | Display name (informational) |
+| `pass_through` | All | Proxy intervention level (see below) |
 
-You only need to ensure your OpenClaw provider URL points to the proxy: 
-`"http://127.0.0.1:5000/v1"`
+---
 
+## PASS-THROUGH MODES
 
-**Logging & Storage Config**
+The `pass_through` field in each profile controls how much ClawCut intervenes:
 
-`DEBUG_MODE = True` prints the full JSON payloads to the console (useful for troubleshooting).
+| Value | Mode | What happens |
+|-------|------|--------------|
+| `False` | **Full intervention** | Trimming, Smart Amnesia, Attention Forcer, Rescues — all active. Best for small local models (7B–8B). |
+| `"small"` | **Format translation** | No content manipulation. Only translates between OpenAI and Ollama formats. Best for powerful local models (14B+). |
+| `"full"` | **Cloud passthrough** | Raw forward to cloud API with stream translation. Strips Ollama-specific fields (`options`, `role: "tool"` messages). Best for cloud models. |
 
-`WRITE_TO_LOGFILE` saves the terminal output to the specified PATH_TO_LOGFILE.
+---
 
-`DELETE_LOG_SIZE` rotates/deletes the log automatically when it reaches this size to prevent disk full issues.
-
-Location/path to logs. Examples:
- 
-Linux/Pi: `"/home/username/"` 
-Mac: `"/Users/username/"`
-Windows: `"C:/Users/username/"`
+## STARTING CLAWCUT
 
 ```bash
-DEBUG_MODE = True
-WRITE_TO_LOGFILE = True
-PATH_TO_LOGFILE = '/home/user/clawcut.log' # Change to your preferred log path
-DELETE_LOG_SIZE = '10 MB' 
+# Start with default profile (LLM1)
+/home/user/proxy_env/bin/python /home/user/ClawCut/clawcut.py
+
+# Start with specific profile
+/home/user/proxy_env/bin/python /home/user/ClawCut/clawcut.py -LLM2
+/home/user/proxy_env/bin/python /home/user/ClawCut/clawcut.py -LLM3
+
+# Kill old process and restart
+/home/user/proxy_env/bin/python /home/user/ClawCut/clawcut.py -LLM2 -restart
+
+# Flags can be combined in any order
+/home/user/proxy_env/bin/python /home/user/ClawCut/clawcut.py -restart -LLM3
 ```
 
-## SMART AMNESIA MODE
+The `-restart` flag kills any running ClawCut process before starting the new one. Profile flags (`-LLM1`, `-LLM2`, `-LLM3`, etc.) are dynamic — any profile name defined in `PROFILES` works.
 
-Over time, chat histories get too long for small models to process efficiently.
-If enabled, the proxy watches the current turn: when the last message is a tool 
-result (i.e., the model just received the output of an exec call), the proxy 
-truncates all prior chat history. This creates a "fresh start" for the model 
-to formulate its response based on the tool result alone, preventing infinite 
-loops and keeping the context window and RAM small.
+---
 
-Outside of tool execution turns, normal chat history is preserved up to 
-`CHAT_HISTORY_LIMIT` messages (see below).
+## FEATURE CONFIGURATION
 
-```bash
+### Logging
+
+```python
+DEBUG_MODE = True             # Print full JSON payloads to console
+WRITE_TO_LOGFILE = True       # Also write to logfile
+PATH_TO_LOGFILE = '/home/user/clawcut.log'
+DELETE_LOG_SIZE = '10 MB'     # Rotate log at this size
+```
+
+### Smart Amnesia
+
+Over time, chat histories grow too large for small models. Smart Amnesia watches the current turn: when the last message is a tool result (the model just received exec output), the proxy truncates all prior history. In normal chat mode, history is trimmed to `CHAT_HISTORY_LIMIT` messages.
+
+```python
 ENABLE_SMART_AMNESIA = True
+CHAT_HISTORY_LIMIT = 10   # Messages kept in chat mode (excluding system)
 ```
 
-## CHAT HISTORY
+### Prompt Trimming
 
-Amnesia only when the current turn processes a tool result (last message is ‘tool’)
-Example: You exchanged 10 messages without calling a tool. The context is preserved. 
-Then you call a tool (exec). Result: The context is cut off, and you can no longer 
-retrieve the conversation that took place before the tool was called. 
+Strips unused default skills from the system prompt before sending to the model.
 
-`CHAT_HISTORY_LIMIT` lets you specify how much chat history (recent messages in a normal chat) 
-should be kept.
-
-```bash
-CHAT_HISTORY_LIMIT = 10 # Number of messages (excluding system messages) in chat mode
-```
-
-
-## UNIVERSAL AUTO-DELIVERY
-
-Before OpenClaw 3.12, the proxy had to manually force the LLM to send its text answers to WhatsApp using the 'message' tool.
-For OpenClaw 3.12+, better keep this `FALSE`. 
-
-OpenClaw now has "native reply routing" and should automatically route text answers back to the chat interface.
-Setting this to True on modern OpenClaw versions could cause a "Message failed" conflict.
-
-This is legacy support.
-
-```bash
-FORCE_AUTO_DELIVERY = False
-```
-
-Automatically force text delivery to WhatsApp if the request originated from a Cron job.
-Cron jobs lack a native chat interface, so OpenClaw's native routing won't show the text anywhere.
-
-```bash
-FORCE_CRON_DELIVERY = False
-AUTO_DELIVERY_CHANNEL = "whatsapp"  
-AUTO_DELIVERY_TARGET = "+49123456" 
-```
-
-Important: Since OpenClaw version 2026.3.12 there seems to be issues with the routing of messages triggered by a cron job. 
-ClawCut clearly sees this messages. The issue seems to be on OpenClaw's side. FORCE_CRON_DELIVERY has unfortunately 
-no effect at the moment. OpenClaw ignores it. This is legacy support.
-
-## PASSTHROUGH MODE
-
-Pure Pass-Through Mode: If True, completely disables all proxy logic (trimming, amnesia, auto-delivery, bash-rescue).
-The proxy will only log traffic and forward the exact JSON between OpenClaw and the LLM, maintaining format compatibility.
-Useful for powerful models (e.g., 14B, 70B, GPT-4) that don't need workarounds. 
- 
-If passthrough mode is active (True), you'll immediately notice a difference in speed. Responses from the model are 
-generated much more slowly, and tool execution on small models will likely no longer work because the proxy no longer injects tool calls,
-and the model becomes overwhelmed again by the massive increase in JSON clutter.
-
-```bash
-PASS_THROUGH_MODE = False  # Set "False" to unleash ClawCuts power
-```
-
-## BASE PATH FOR SCRIPT RESCUE
-
-Change this to match the root directory where your scripts (if you have some) are stored, that OpenClaw should execute.
-This matches what you tell the LLM for example in your TOOLS.md. See also `EMERGENCY_RESCUES`.
-
-Linux/Pi: "/home/username/" 
-Mac: "/Users/username/"
-Windows: "C:/Users/username/"
-
-```bash
-EXPECTED_SCRIPT_BASE_PATH = "/home/user/"
-```
-
-SYSTEM PROMPT TRIMMING 
-
-If True, the proxy aggressively strips out the skills listed in TRIM_SKILLS before sending 
-the prompt to the model, freeing up its attention span for your custom tools, to prevent cognitive overload.
-Change this list to whatever you feel is (un)necessary.
-
-```bash
+```python
 ENABLE_PROMPT_TRIMMING = True
 TRIM_SKILLS = [
-    "clawhub", "gemini", "gh-issues", "github", "healthcheck", 
-    "nano-pdf", "openai-whisper", "skill-creator", "summarize", 
+    "clawhub", "gemini", "gh-issues", "github", "healthcheck",
+    "nano-pdf", "openai-whisper", "skill-creator", "summarize",
     "video-frames", "wacli", "weather"
 ]
 ```
 
-## ATTENTION FORCER (End-of-Prompt Injection)
+### Attention Forcer
 
-If True, this injects a strong reminder at the very end of the user's latest message. Change thist to whatever you want 
-your LLM focus on.
+Injects a reminder at the end of every user message to enforce tool usage.
 
-```bash
+```python
 ENABLE_ATTENTION_FORCER = True
-ATTENTION_FORCER_TEXT = "\n\n[SYSTEM-REMINDER: NEVER respond to requests for local scripts, data, or services directly with text! You MUST use the ‘exec’ tool FIRST!]"
+ATTENTION_FORCER_TEXT = "\n\n[SYSTEM-REMINDER: NEVER respond to requests for local scripts, data, or services directly with text! You MUST use the 'exec' tool FIRST!]"
 ```
 
-## EMERGENCY RESCUE - Where the tool call magic happens
+### Emergency & Input Rescue
 
-Intercepts specific model texts and converts them into hidden 'exec' tool calls.
-Useful if the model only describes what it wants to do, but forgets to output the actual JSON tool call.
-If `ENABLE_INPUT_RESCUE` is `True`, this also triggers for incoming user requests (e.g. Cron jobs).
+`ENABLE_INPUT_RESCUE` — scans the incoming user message and short-circuits to an exec call without consulting the LLM at all. Useful for Cron jobs.
 
-Scripts down below are examples how to use. These are my own scripts I want OpenClaw to call. Change to
-your scripts (if you have some) and set `ENABLE_EMERGENCY_RESCUE = True`
+`ENABLE_EMERGENCY_RESCUE` — scans the LLM's text response and converts recognized keywords into exec calls if the model forgot to use the tool.
 
-`ENABLE_INPUT_RESCUE` takes precedence over the LLM—it scans the incoming user message and bypasses the 
-LLM entirely, going straight to the exec call without even consulting the LLM.
+Scripts down below are examples how to use. These are my own scripts I want OpenClaw to call. Change to your scripts (if you have some) and set `ENABLE_EMERGENCY_RESCUE = True`
 
-`ENABLE_EMERGENCY_RESCUE` intervenes after the LLM—it scans the LLM’s text response in `generate()` 
-and converts recognized keywords into an `exec` call if the model forgot to use the tool.
-
-```bash
+```python
 ENABLE_EMERGENCY_RESCUE = True
 ENABLE_INPUT_RESCUE = False
+EXPECTED_SCRIPT_BASE_PATH = "/home/user/"
+
 EMERGENCY_RESCUES = [
     {
-        "keywords": ["weather", "tell"], 
+        "keywords": ["weather", "tell"],
         "command": 'bash /home/user/weather.sh "New York"'
     },
     {
-        "keywords": ["diesel", "price"], 
+        "keywords": ["diesel", "price"],
         "command": 'bash /home/user/.openclaw/workspace/skills/diesel-price/diesel_price.sh'
     },
-     {
-        "keywords": ["backup", "create"], 
+    {
+        "keywords": ["backup", "create"],
         "command": 'bash /home/user/.openclaw/workspace/skills/system_control/run_bmus.sh'
     }
 ]
 ```
 
+### Legacy: Auto-Delivery
 
-## PREREQUISITES
+```python
+FORCE_AUTO_DELIVERY = False    # Legacy. Not needed for OpenClaw 3.12+.
+FORCE_CRON_DELIVERY = False    # Known broken due to OpenClaw architecture. Legacy support only.
+AUTO_DELIVERY_CHANNEL = "whatsapp"
+AUTO_DELIVERY_TARGET = "+49123456"
+```
 
-To run the ClawCut Universal Proxy, you need Python 3 and two libraries: 
+---
 
-- Flask (to host the proxy server)
-- requests (to communicate with your LLM backend).
+## CLOUD PROVIDER SETUP (NVIDIA / OpenAI)
 
+For cloud profiles, `openclaw.json` stays unchanged. All connection details live in the ClawCut profile:
 
-## INSTALLATION
+**NVIDIA NIM example:**
+```python
+"LLM3": {
+    "base_url": "https://integrate.api.nvidia.com/v1/chat/completions",
+    "api_key": "nvapi-your-actual-key-here",
+    "model_id": "moonshotai/kimi-k2.5",
+    "model_name": "moonshotai/kimi-k2.5",
+    "headers": {},
+    "pass_through": "full"
+}
+```
 
-It is highly recommended to use a Virtual Environment (venv) to keep your system clean.
+In `"full"` passthrough mode, ClawCut automatically:
+- Overrides the `model` field with the profile's `model_id`
+- Adds `Authorization: Bearer <api_key>` to request headers
+- Removes Ollama-specific fields (`options`, `tool_choice`)
+- Filters `role: "tool"` messages from history (unsupported by cloud APIs)
+- Filters empty assistant messages
+- Translates the OpenAI SSE stream back to Ollama NDJSON for OpenClaw
 
-**Linux (Ubuntu / Debian / Raspberry Pi OS)**
+---
 
-Open your terminal and run the following commands:
+## LOCAL MLX SERVER (MAC)
 
-Update package list
+MLX is Apple's machine learning framework optimized for Apple Silicon (M1/M2/M3/M4). It lets you run quantized LLMs locally at high speed without needing a discrete GPU.
+
+### Finding & Downloading Models
+
+You don't need to manually download model files. The `mlx_lm` server handles everything automatically.
+
+1. **Browse Models:** Go to [Hugging Face](https://huggingface.co/mlx-community) and search for the `mlx-community` organization. They provide pre-converted models optimized for Apple Silicon.
+
+2. **Choose your Model:** Copy the repository name (e.g., `mlx-community/Qwen2.5-Coder-7B-Instruct-4bit`).
+
+3. **Automatic Download:** When you start the server for the first time using the `--model` flag, `mlx_lm` will automatically download the files (several GBs) and cache them locally on your Mac.
+
+**Model size guide (choose based on your RAM):**
+
+| RAM | Recommended size | Example |
+|-----|-----------------|---------|
+| 8 GB | 4B–7B (4-bit) | Qwen2.5-Coder-7B-Instruct-4bit |
+| 16 GB | 7B–14B (4-bit) | Qwen2.5-14B-Instruct-4bit |
+| 24 GB+ | 14B–32B (4-bit) | Qwen2.5-32B-Instruct-4bit |
+
+### Installing mlx_lm
 
 ```bash
-sudo apt update
+pip install mlx-lm
 ```
 
-Install Python pip and venv support
+### Starting the Server
+
+If ClawCut and your Mac are on the **same machine**:
 ```bash
-sudo apt install python3-pip python3-venv -y
+python -m mlx_lm.server --model mlx-community/Qwen2.5-Coder-7B-Instruct-4bit --port 8090
 ```
 
-Navigate to your ClawCut folder
+If ClawCut runs on a **different machine** (e.g., a Raspberry Pi), you must bind to the network interface so the Pi can reach the Mac. Use `--host 0.0.0.0`:
 ```bash
-cd /home/user/ClawCut/
+python -m mlx_lm.server --model mlx-community/Qwen2.5-Coder-7B-Instruct-4bit --host 0.0.0.0 --port 8090
 ```
 
-Create a virtual environment
+⚠️ `--host 0.0.0.0` makes the LLM accessible to any device on your local network. Only use this on a trusted home or office network.
 
-```bash
-python3 -m venv proxy_env
+⚠️ Replace the model name with the one you actually want to use. Make sure it fits your available RAM (see table above).
+
+### macOS Firewall
+
+If the connection is refused (Error 502), your macOS firewall may be blocking the port.
+
+- Go to **System Settings → Network → Firewall**
+- Either disable it temporarily for testing, or click **Options** and ensure your Python binary (inside your `mlx_env` or `venv`) is allowed to receive incoming connections
+- Test the connection from the Pi: `nc -zv [MAC_IP] 8090` — it should say "succeeded"
+
+### Profile Configuration for MLX
+
+```python
+"LLM1": {
+    "ip": "192.168.0.184",   # Your Mac's local IP
+    "port": 8090,
+    "model_id": "ollama/Qwen2.5-Coder-7B-Instruct-4bit",
+    "model_name": "mlx-community/Qwen2.5-Coder-7B-Instruct-4bit",
+    "pass_through": False     # Full intervention — recommended for 7B models
+}
 ```
 
-Activate the environment
+Use `"pass_through": False` for 7B/8B models (they need trimming, amnesia, and tool injection to work reliably). Use `"pass_through": "small"` for 14B+ if you want less intervention.
 
-```bash
-source proxy_env/bin/activate
-```
+### Performance Notes
 
-Install requirements
-```bash
-pip install Flask requests
-```
+- **First request is always slow** — the full 16k context window is processed for the first time. This can take 30–60 seconds on a 7B model.
+- **From the second request onward**, ClawCut's caching and trimming kick in and response times drop to a few seconds.
+- The `ENABLE_PROMPT_TRIMMING` and `ENABLE_SMART_AMNESIA` options have the most impact on MLX performance — keep both enabled for small models.
 
-**macOS**
+---
 
-macOS usually comes with Python 3 pre-installed. Open the Terminal app:
+## NOTES
 
-Create a virtual environment
-
-```bash
-python3 -m venv proxy_env
-```
-
-Activate the environment
-
-```bash
-source proxy_env/bin/activate
-```
-
-Install requirements
-
-```bash
-pip install Flask requests
-```
-
-**Windows**
-Open PowerShell or Command Prompt (CMD) as Administrator:
-
-Create a virtual environment
-
-```bash
-python -m venv proxy_env
-```
-
-Activate the environment (PowerShell)
-
-```bash
-.\proxy_env\Scripts\Activate.ps1
-```
-
-OR Activate the environment (CMD)
-
-```bash
-.\proxy_env\Scripts\activate.bat
-```
-
-Install requirements
-```bash
-pip install Flask requests
-```
-
-
-## INSTALL & START ClawCut ##
-
-Clone the repository
-
-```bash
-git clone [https://github.com/back-me-up-scotty/ClawCut.git](https://github.com/back-me-up-scotty/ClawCut.git)  
-cd clawcut-mlx
-```
-
-Assign rights to execute ClawCut (for example on Mac & Linux)
-
-```bash
-chmod +x /home/user/ClawCut/clawcut.py
-```
- 
-Once the installation is complete and the environment is activated, you can start the proxy (Example on a Linux/Pi):
-
-```bash
-/home/user/proxy_env/bin/python /home/user/ClawCut/clawcut.py # (Starts with default profile LLM1)
-```
-```bash
-/home/nhg/proxy_env/bin/python /home/user/ClawCut/clawcut.py -LLM2 # (Starts with profile LLM2)
-```
-```bash
-/home/nhg/proxy_env/bin/python /home/user/ClawCut/clawcut.py -restart # (Kills process and restart with profile LLM1/default)
-```
-
-Note: You can always tell if the environment is active by the (proxy_env) prefix in your terminal prompt.
-
-
-## USING A MLX-Model for Mac ##
-
-How to find & download MLX Models
-
-You don't need to manually download model files. The mlx-lm server handles everything automatically.
-
-1. Browse Models: Go to [Hugging Face](https://huggingface.co/mlx-community) and search for the `mlx-community organization`. They provide pre-converted models optimized for Apple Silicon.
-
-2. Choose your Model:Copy the repository name (e.g., mlx-community/Qwen2.5-14B-Instruct-4bit).
-
-3. Automatic Download: When you start the server for the first time using the --model flag, mlx-lm will automatically download the files (several GBs) and cache them locally on your Mac.
-
-If your OpenClaw installation is on a different computer (such as a Raspberry Pi) than your Mac's LLM, then you must allow the Raspberry Pi to talk to your LLM host, 
-the MLX server must not only run on localhost. You **must** bind it to your network interface.  
-Start the server on your Mac with the `--host 0.0.0.0` flag: 
-
-```bash
-python -m mlx_lm.server --model [YOUR_MODEL_ID] --host 0.0.0.0 --port 8080
-```
-*Note: Using 0.0.0.0 makes the LLM accessible to any device in your local network.*
-
-** ⚠️ IMPORTANT:** Replace `[YOUR_MODEL_ID]` with the model of your choice (e.g., `mlx-community/Qwen2.5-14B-Instruct-4bit`). Ensure that the model fits your available RAM (a 14B model requires approx. 9-10 GB RAM, a 32B model approx. 19 GB). Choose a smaller model (e.g., 7B) if your Mac only has 8 GB or 16 GB of RAM.  
-
-** ⚠️ Note on Performance:** The very first request (or the first one after clearing a chat session) will take significantly longer (often 30-60 seconds) because the Mac has to process the entire 16k context for the first time. **ClawCut-MLX** optimization becomes effective starting with the **second** request, reducing response times to just a few seconds.  
-
-**⚠️ macOS Firewall Note
-
-If the connection is still refused (Error 502/61), your macOS firewall might be blocking the port.
-
-- Go to `System Settings > Network > Firewall`.  
-- Either disable it temporarily for testing or click **Options** and ensure that your Python binary (inside your `mlx_env`) is allowed to receive incoming connections.  
-- Test connection: Run `nc -zv [MAC_IP] 8080\`. It should say "succeeded".
-
- 
-### **OpenClaw Configuration (openclaw.json)**
-
-Point your OpenClaw provider to the proxy. If OpenClaw and the ClawCut are on the same machine (if not change IP), use the following configuration:  
-
-```json
-"models": {  
-    "mode": "merge",  
-    "providers": {  
-      "ollama": {  
-        "baseUrl": "http://127.0.0.1:5000/v1",
-        "apiKey": "ollama-local",  
-        "api": "ollama",  
-        "models": [  
-          {  
-            "id": "ollama/qwen2.5:14b",  
-            "name": "qwen 2.5 14b",  
-            "reasoning": false,  
-            "input": [
-              "text"
-            ],
-            "cost": {  
-              "input": 0,  
-              "output": 0,  
-              "cacheRead": 0,  
-              "cacheWrite": 0  
-            },  
-            "contextWindow": 16384,  
-            "maxTokens": 4096,  
-            "compat": {  
-              "supportsDeveloperRole": false  
-            }  
-          }  
-        ]  
-      }  
-    }  
-  },  
-  "agents": {  
-    "defaults": {  
-      "model": {  
-        "primary": "ollama/qwen2.5:14b"  
-      }  
-    }  
-  }
-```
-
-When using this proxy, the specific model name you configure in OpenClaw does NOT matter.
-The proxy intercepts the traffic and completely overrides the requested model.
-
-You only need to ensure your OpenClaw provider URL points to the proxy: `"http://127.0.0.1:5000/v1"`
- 
-
+- The first request after a `/reset` or session start is always slower — the full context window is processed for the first time. From the second request onward, response times drop significantly.
+- ClawCut is experimental. OpenClaw updates may break compatibility. Fork it, adapt it, share your results.
+- Community: https://discord.com/invite/clawd
