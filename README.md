@@ -146,7 +146,7 @@ PROFILES = {
 
     # Local MLX (Mac) — full proxy intervention
     "LLM1": {
-        "ip": "192.168.0.184",
+        "ip": "192.168.0.xxx",
         "port": 8090,
         "model_id": "ollama/Qwen2.5-Coder-7B-Instruct-4bit",
         "model_name": "mlx-community/Qwen2.5-Coder-7B-Instruct-4bit",
@@ -155,7 +155,7 @@ PROFILES = {
 
     # Local Ollama — format translation only, no content manipulation
     "LLM2": {
-        "ip": "192.168.0.167",
+        "ip": "192.168.0.xxx",
         "port": 11434,
         "model_id": "ollama/qwen2.5:14b",
         "model_name": "qwen2.5:14b",
