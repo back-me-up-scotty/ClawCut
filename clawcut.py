@@ -116,14 +116,14 @@ app = Flask(__name__)
 
 PROFILES = {
     "LLM1": {
-        "ip": "192.168.xxx.xxx", # No api_key, no base_url → local, uses http://ip:port/v1/chat/completions
+        "ip": "192.168.0.xxx", # No api_key, no base_url → local, uses http://ip:port/v1/chat/completions
         "port": 8090,
         "model_id": "ollama/Qwen2.5-Coder-7B-Instruct-4bit",
         "model_name": "mlx-community/Qwen2.5-Coder-7B-Instruct-4bit",
         "pass_through": False       # Full proxy intervention for small local models
     },
     "LLM2": {
-        "ip": "192.168.xxx.xxx",
+        "ip": "192.168.0.xxx",
         "port": 11434,
         "model_id": "ollama/mistral-nemo",
         "model_name": "mistral-nemo",
@@ -133,7 +133,7 @@ PROFILES = {
         # baseUrl from openclaw.json → becomes the direct LLM target
         "base_url": "https://integrate.api.nvidia.com/v1/chat/completions",
         # apiKey from openclaw.json → used in Authorization header
-        "api_key": "nvapi-",
+        "api_key": "nvapi-xxxxx",
         # model id from openclaw.json models[].id
         "model_id": "moonshotai/kimi-k2.5",
         # model name from openclaw.json models[].name (or same as model_id)
@@ -285,7 +285,7 @@ TRIM_SKILLS = [
 # 2. Attention Forcer (End-of-Prompt Injection)
 # If True, this injects a strong reminder at the very end of the user's latest message.
 ENABLE_ATTENTION_FORCER = True
-ATTENTION_FORCER_TEXT = "\n\n[SYSTEM REMINDER: Never answer requests about local scripts, data, or services directly with text! You MUST strictly use the 'exec' tool FIRST!]"
+ATTENTION_FORCER_TEXT = "\n\n[SYSTEM REMINDER: NEVER respond directly with text to requests regarding local scripts, data, or services! You MUST use the ‘exec’ tool FIRST!]"
 
 # 3. Emergency Rescue (Catch & Convert) - Where the tool call magic happens
 # Intercepts specific model texts and converts them into hidden 'exec' tool calls.
@@ -304,16 +304,16 @@ ENABLE_EMERGENCY_RESCUE = True
 ENABLE_INPUT_RESCUE = False
 EMERGENCY_RESCUES = [
     {
-        "keywords": ["weather", "check"], 
-        "command": 'bash /home/nhg/weather.sh "Frankfurt"'
+        "keywords": ["wetter", "check"], 
+        "command": 'bash /home/user/weather.sh "Frankfurt"'
     },
     {
         "keywords": ["diesel", "price"], 
-        "command": 'bash /home/nhg/.openclaw/workspace/skills/diesel-price/diesel_price.sh'
+        "command": 'bash /home/user/.openclaw/workspace/skills/diesel-price/diesel_price.sh'
     },
      {
-        "keywords": ["backup", "make"], 
-        "command": 'bash /home/nhg/.openclaw/workspace/skills/system_control/run_bmus.sh'
+        "keywords": ["backup", "create"], 
+        "command": 'bash /home/user/.openclaw/workspace/skills/system_control/run_bmus.sh'
     }
 ]
 # ==========================================
@@ -1288,7 +1288,8 @@ setInterval(loadLogs, 1000);
             if 'messages' in passthrough_data:
                 passthrough_data['messages'] = [
                     m for m in passthrough_data['messages']
-                    if m.get('role') != 'tool' and m.get('content', '') != ''
+                    if m.get('role') not in ('tool',)
+                    and m.get('content') not in (None, '', [])
                 ]
             if DEBUG_MODE:
                 print(f"[DEBUG] FULL_PASS_THROUGH_MODE active — forwarding raw request.")
@@ -1298,6 +1299,9 @@ setInterval(loadLogs, 1000);
             if raw_req.status_code != 200:
                 return json.dumps({"error": f"LLM Server Error {raw_req.status_code}", "details": raw_req.text}), 502
             def full_passthrough_stream():
+                merged_tools = {}
+                full_content = ""
+
                 for chunk in raw_req.iter_lines():
                     if not chunk:
                         continue
@@ -1308,22 +1312,63 @@ setInterval(loadLogs, 1000);
                         continue
                     data_str = line[6:]
                     if data_str == "[DONE]":
-                        yield json.dumps({"message": {"content": ""}, "done": True}) + "\n"
                         break
                     try:
                         data = json.loads(data_str)
-                        content = ""
                         choices = data.get("choices", [])
-                        if choices:
-                            delta = choices[0].get("delta", {})
-                            content = delta.get("content", "")
-                        ollama_chunk = {"message": {"role": "assistant", "content": content}, "done": False}
-                        yield json.dumps(ollama_chunk) + "\n"
+                        if not choices:
+                            continue
+                        delta = choices[0].get("delta", {})
+                        if delta.get("content"):
+                            full_content += delta["content"]
+                        if "tool_calls" in delta:
+                            for tc in delta["tool_calls"]:
+                                idx = tc.get("index", 0)
+                                if idx not in merged_tools:
+                                    merged_tools[idx] = {"name": "", "arguments": ""}
+                                if "function" in tc:
+                                    if tc["function"].get("name"):
+                                        merged_tools[idx]["name"] += tc["function"]["name"]
+                                    if tc["function"].get("arguments"):
+                                        merged_tools[idx]["arguments"] += tc["function"]["arguments"]
                     except Exception:
                         continue
-            print(f"[DEBUG] Finished in {time.time() - start_time:.2f}s | FULL_PASS_THROUGH")
-            return Response(full_passthrough_stream(), content_type='application/x-ndjson')
 
+                try:
+                    final_tool_calls = []
+                    for idx, func in merged_tools.items():
+                        if func["name"]:
+                            args = func["arguments"]
+                            try:
+                                args = json.loads(args) if isinstance(args, str) else args
+                            except Exception:
+                                args = {}
+                            final_tool_calls.append({"function": {"name": func["name"], "arguments": args}})
+
+                    message_obj = {"role": "assistant", "content": full_content}
+                    if final_tool_calls:
+                        message_obj["tool_calls"] = final_tool_calls
+
+                    yield json.dumps({
+                        "model": requested_model,
+                        "created_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+                        "message": message_obj,
+                        "done": False
+                    }).encode('utf-8') + b'\n'
+
+                except Exception as e:
+                    print(f"[FULL-PT ERROR] {e}")
+
+                finally:
+                    yield json.dumps({
+                        "model": requested_model,
+                        "created_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+                        "message": {"role": "assistant", "content": ""},
+                        "done": True
+                    }).encode('utf-8') + b'\n'
+
+        print(f"[DEBUG] Finished in {time.time() - start_time:.2f}s | FULL_PASS_THROUGH")
+        return Response(full_passthrough_stream(), content_type='application/x-ndjson')
        
         # --- INPUT RESCUE (SHORT-CIRCUITING) ---
         # Scans incoming messages (e.g. from Cron jobs) for keywords to bypass the LLM entirely.
