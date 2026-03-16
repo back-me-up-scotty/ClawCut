@@ -50,6 +50,7 @@ configuration or with future OpenClaw updates.
 
 ## FEATURES
 
+- **WEB-DASHBOARD** - OpenClaw can be configured either through a web dashboard or directly in the file itself.
 - **PROFILE SWITCHING** — Switch between any number of local or cloud LLM backends using a CLI flag. No changes to `openclaw.json` required.
 - **PASS-THROUGH MODES** — Three levels: full proxy intervention, small (format-only), or full cloud passthrough.
 - **CLOUD PROVIDER SUPPORT** — Connect to NVIDIA, OpenAI, or any OpenAI-compatible API via profile configuration.
@@ -78,7 +79,7 @@ To give you an idea of the setup I use to run my LLM locally in combination with
 
 ### Prerequisites
 
-To execute ClawCut and the Dashboard you have to install Python 3, Flask and requests:
+To execute ClawCut and run the Dashboard you have to install Python 3, Flask and requests:
 
 ```bash
 # Linux / Raspberry Pi
@@ -232,7 +233,9 @@ The `pass_through` field in each profile controls how much ClawCut intervenes:
 The `-restart` flag kills any running ClawCut process before starting the new one. Profile flags (`-LLM1`, `-LLM2`, `-LLM3`, etc.) are dynamic — any profile name defined in `PROFILES` works.
 
 As soon as ClawCut is running, point your browser to `http://127.0.0.1:5000` or, if ClawCut is running on a different host, 
-`http://IP-Adresse:5000`.
+`http://IP-Adresse:5000`. 
+
+⚠️ After the first launch, ClawCut automatically creates the `config.json` file. It contains all the settings specified in the script itself. `config.json` is the sole source of truth after the first launch. The hardcoded values in the script are merely fallback defaults for the very first launch, when no `config.json` file yet exists.
 
 ---
 
