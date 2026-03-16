@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-ClawCut - Universal LLM Bridge & Proxy (BETA) - v. 3.2.0
+ClawCut - Universal LLM Bridge & Proxy (BETA) - v. 4.0.0
 --------------------------------------------------------------------------------
 LICENSE: ClawCut Personal & Non-Commercial License
 Copyright (c) 2026 Niels Gerhardt
@@ -77,7 +77,7 @@ WHEN NOT TO USE:
   PASS_THROUGH_MODE = True.
 
 HOW TO START:
-- See README.md on GitHub. 
+- See README.md on GitHub. https://github.com/back-me-up-scotty/ClawCut
 
 --KNOWN ISSUES -----------------------------------------------------------------
 - Since OpenClaw version 2026.3.12 there are issues with the routing of messages 
@@ -116,21 +116,20 @@ app = Flask(__name__)
 
 PROFILES = {
     "LLM1": {
-        "ip": "192.168.0.xxx", # No api_key, no base_url → local, uses http://ip:port/v1/chat/completions
+        "ip": "192.168.xxx.xxx", # No api_key, no base_url → local, uses http://ip:port/v1/chat/completions
         "port": 8090,
         "model_id": "ollama/Qwen2.5-Coder-7B-Instruct-4bit",
         "model_name": "mlx-community/Qwen2.5-Coder-7B-Instruct-4bit",
         "pass_through": False       # Full proxy intervention for small local models
     },
     "LLM2": {
-        "ip": "192.168.0.xxx",
+        "ip": "192.168.xxx.xxx",
         "port": 11434,
-        "model_id": "ollama/qwen2.5:14b",
-        "model_name": "qwen2.5:14b",
-        "pass_through": "small"     # Format translation only, no injection/manipulation
+        "model_id": "ollama/mistral-nemo",
+        "model_name": "mistral-nemo",
+        "pass_through": False     # Format translation only, no injection/manipulation
     },
     "LLM3": {
-        # Examaple Cloud profile
         # baseUrl from openclaw.json → becomes the direct LLM target
         "base_url": "https://integrate.api.nvidia.com/v1/chat/completions",
         # apiKey from openclaw.json → used in Authorization header
@@ -149,6 +148,22 @@ PROFILES = {
 # Default Profile (if no flag is provided)
 SELECTED_PROFILE = "LLM1"
 
+# Load config.json (if available) to override defaults
+_config_path = os.path.join(os.path.dirname(__file__), "config.json")
+_config_data = {}
+try:
+    if os.path.exists(_config_path):
+        with open(_config_path, "r", encoding="utf-8") as _cfg_file:
+            _config_data = json.load(_cfg_file)
+except Exception:
+    _config_data = {}
+
+if isinstance(_config_data, dict):
+    if isinstance(_config_data.get("PROFILES"), dict):
+        PROFILES = _config_data["PROFILES"]
+    if _config_data.get("SELECTED_PROFILE"):
+        SELECTED_PROFILE = _config_data["SELECTED_PROFILE"]
+
 # Parse Profile from command line — dynamically matches any -LLMx flag defined in PROFILES.
 # Use the '-LLM1', '-LLM2', '-LLM3' etc. flag when starting the proxy.
 # Example: python clawcut-mlx.py -LLM3 -restart
@@ -156,6 +171,9 @@ for _arg in sys.argv[1:]:
     if _arg.startswith('-') and _arg[1:] in PROFILES:
         SELECTED_PROFILE = _arg[1:]
         break
+
+if SELECTED_PROFILE not in PROFILES and PROFILES:
+    SELECTED_PROFILE = list(PROFILES.keys())[0]
 
 cfg = PROFILES[SELECTED_PROFILE]
 
@@ -179,7 +197,6 @@ if _api_key:
 if 'headers' in cfg:
     LLM_REQUEST_HEADERS.update(cfg['headers'])
 
-# Derive pass-through mode from profile.
 
 # Derive pass-through mode from profile.
 # False      → full proxy intervention (injection, amnesia, trimming, rescue)
@@ -236,13 +253,13 @@ FORCE_AUTO_DELIVERY = False
 # Cron jobs lack a native chat interface, so OpenClaw's native routing won't show the text anywhere.
 FORCE_CRON_DELIVERY = False
 AUTO_DELIVERY_CHANNEL = "whatsapp"  
-AUTO_DELIVERY_TARGET = "+49123456" 
+AUTO_DELIVERY_TARGET = "+49123456789" 
 
 
 # ==========================================
 # --- PROXY BEHAVIOR ---
 # ==========================================
- 
+
 
 # BASE PATH FOR SCRIPT RESCUE
 # Change this to match the root directory where your scripts (if you have some) are stored, that OpenClaw should execute.
@@ -253,7 +270,7 @@ AUTO_DELIVERY_TARGET = "+49123456"
 EXPECTED_SCRIPT_BASE_PATH = "/home/user/"
 
 # Default message sent to the user when an audio file is delivered
-AUDIO_DELIVERY_MESSAGE = "Here is your audio"
+AUDIO_DELIVERY_MESSAGE = "Here is your audio."
 
 # 1. System Prompt Trimming (Cognitive Overload Protection)
 # If True, the proxy aggressively strips out the skills listed in TRIM_SKILLS before sending 
@@ -268,7 +285,7 @@ TRIM_SKILLS = [
 # 2. Attention Forcer (End-of-Prompt Injection)
 # If True, this injects a strong reminder at the very end of the user's latest message.
 ENABLE_ATTENTION_FORCER = True
-ATTENTION_FORCER_TEXT = "\n\n[SYSTEM REMINDER: NEVER respond directly with text to requests regarding local scripts, data, or services! You MUST use the ‘exec’ tool FIRST!]"
+ATTENTION_FORCER_TEXT = "\n\n[SYSTEM REMINDER: Never answer requests about local scripts, data, or services directly with text! You MUST strictly use the 'exec' tool FIRST!]"
 
 # 3. Emergency Rescue (Catch & Convert) - Where the tool call magic happens
 # Intercepts specific model texts and converts them into hidden 'exec' tool calls.
@@ -287,19 +304,69 @@ ENABLE_EMERGENCY_RESCUE = True
 ENABLE_INPUT_RESCUE = False
 EMERGENCY_RESCUES = [
     {
-        "keywords": ["wetter", "how"], 
-        "command": 'bash /home/user/weather.sh "New York"'
+        "keywords": ["weather", "check"], 
+        "command": 'bash /home/nhg/weather.sh "Frankfurt"'
     },
     {
         "keywords": ["diesel", "price"], 
         "command": 'bash /home/nhg/.openclaw/workspace/skills/diesel-price/diesel_price.sh'
     },
      {
-        "keywords": ["backup", "start"], 
+        "keywords": ["backup", "make"], 
         "command": 'bash /home/nhg/.openclaw/workspace/skills/system_control/run_bmus.sh'
     }
 ]
 # ==========================================
+
+if isinstance(_config_data, dict):
+    if "DEBUG_MODE" in _config_data: DEBUG_MODE = _config_data["DEBUG_MODE"]
+    if "WRITE_TO_LOGFILE" in _config_data: WRITE_TO_LOGFILE = _config_data["WRITE_TO_LOGFILE"]
+    if "PATH_TO_LOGFILE" in _config_data: PATH_TO_LOGFILE = _config_data["PATH_TO_LOGFILE"]
+    if "DELETE_LOG_SIZE" in _config_data: DELETE_LOG_SIZE = _config_data["DELETE_LOG_SIZE"]
+    if "ENABLE_SMART_AMNESIA" in _config_data: ENABLE_SMART_AMNESIA = _config_data["ENABLE_SMART_AMNESIA"]
+    if "CHAT_HISTORY_LIMIT" in _config_data: CHAT_HISTORY_LIMIT = _config_data["CHAT_HISTORY_LIMIT"]
+    if "FORCE_AUTO_DELIVERY" in _config_data: FORCE_AUTO_DELIVERY = _config_data["FORCE_AUTO_DELIVERY"]
+    if "FORCE_CRON_DELIVERY" in _config_data: FORCE_CRON_DELIVERY = _config_data["FORCE_CRON_DELIVERY"]
+    if "AUTO_DELIVERY_CHANNEL" in _config_data: AUTO_DELIVERY_CHANNEL = _config_data["AUTO_DELIVERY_CHANNEL"]
+    if "AUTO_DELIVERY_TARGET" in _config_data: AUTO_DELIVERY_TARGET = _config_data["AUTO_DELIVERY_TARGET"]
+    if "EXPECTED_SCRIPT_BASE_PATH" in _config_data: EXPECTED_SCRIPT_BASE_PATH = _config_data["EXPECTED_SCRIPT_BASE_PATH"]
+    if "AUDIO_DELIVERY_MESSAGE" in _config_data: AUDIO_DELIVERY_MESSAGE = _config_data["AUDIO_DELIVERY_MESSAGE"]
+    if "ENABLE_PROMPT_TRIMMING" in _config_data: ENABLE_PROMPT_TRIMMING = _config_data["ENABLE_PROMPT_TRIMMING"]
+    if "TRIM_SKILLS" in _config_data: TRIM_SKILLS = _config_data["TRIM_SKILLS"]
+    if "ENABLE_ATTENTION_FORCER" in _config_data: ENABLE_ATTENTION_FORCER = _config_data["ENABLE_ATTENTION_FORCER"]
+    if "ATTENTION_FORCER_TEXT" in _config_data: ATTENTION_FORCER_TEXT = _config_data["ATTENTION_FORCER_TEXT"]
+    if "ENABLE_EMERGENCY_RESCUE" in _config_data: ENABLE_EMERGENCY_RESCUE = _config_data["ENABLE_EMERGENCY_RESCUE"]
+    if "ENABLE_INPUT_RESCUE" in _config_data: ENABLE_INPUT_RESCUE = _config_data["ENABLE_INPUT_RESCUE"]
+    if "EMERGENCY_RESCUES" in _config_data: EMERGENCY_RESCUES = _config_data["EMERGENCY_RESCUES"]
+
+try:
+    if not os.path.exists(_config_path):
+        with open(_config_path, "w", encoding="utf-8") as _cfg_out:
+            json.dump({
+                "PROFILES": PROFILES,
+                "SELECTED_PROFILE": SELECTED_PROFILE,
+                "DEBUG_MODE": DEBUG_MODE,
+                "WRITE_TO_LOGFILE": WRITE_TO_LOGFILE,
+                "PATH_TO_LOGFILE": PATH_TO_LOGFILE,
+                "DELETE_LOG_SIZE": DELETE_LOG_SIZE,
+                "ENABLE_SMART_AMNESIA": ENABLE_SMART_AMNESIA,
+                "CHAT_HISTORY_LIMIT": CHAT_HISTORY_LIMIT,
+                "FORCE_AUTO_DELIVERY": FORCE_AUTO_DELIVERY,
+                "FORCE_CRON_DELIVERY": FORCE_CRON_DELIVERY,
+                "AUTO_DELIVERY_CHANNEL": AUTO_DELIVERY_CHANNEL,
+                "AUTO_DELIVERY_TARGET": AUTO_DELIVERY_TARGET,
+                "EXPECTED_SCRIPT_BASE_PATH": EXPECTED_SCRIPT_BASE_PATH,
+                "AUDIO_DELIVERY_MESSAGE": AUDIO_DELIVERY_MESSAGE,
+                "ENABLE_PROMPT_TRIMMING": ENABLE_PROMPT_TRIMMING,
+                "TRIM_SKILLS": TRIM_SKILLS,
+                "ENABLE_ATTENTION_FORCER": ENABLE_ATTENTION_FORCER,
+                "ATTENTION_FORCER_TEXT": ATTENTION_FORCER_TEXT,
+                "ENABLE_EMERGENCY_RESCUE": ENABLE_EMERGENCY_RESCUE,
+                "ENABLE_INPUT_RESCUE": ENABLE_INPUT_RESCUE,
+                "EMERGENCY_RESCUES": EMERGENCY_RESCUES
+            }, _cfg_out, indent=2, ensure_ascii=False)
+except Exception:
+    pass
 
 def _parse_size_string(size_str):
     size_str = size_str.strip().upper()
@@ -384,9 +451,811 @@ def extract_hallucinated_tools(text):
                     except Exception: pass
     return jsons
 
+@app.route('/', methods=['GET'])
+@app.route('/api/config', methods=['GET', 'POST'])
+@app.route('/api/restart', methods=['POST'])
+@app.route('/api/logs', methods=['GET'])
+@app.route('/api/logs/reset', methods=['POST'])
 @app.route('/api/chat', methods=['POST'])
 @app.route('/v1/api/chat', methods=['POST'])
 def proxy():
+    global PROFILES, SELECTED_PROFILE, DEBUG_MODE, WRITE_TO_LOGFILE, PATH_TO_LOGFILE, DELETE_LOG_SIZE
+    global ENABLE_SMART_AMNESIA, CHAT_HISTORY_LIMIT, FORCE_AUTO_DELIVERY, FORCE_CRON_DELIVERY
+    global AUTO_DELIVERY_CHANNEL, AUTO_DELIVERY_TARGET, EXPECTED_SCRIPT_BASE_PATH, AUDIO_DELIVERY_MESSAGE
+    global ENABLE_PROMPT_TRIMMING, TRIM_SKILLS, ENABLE_ATTENTION_FORCER, ATTENTION_FORCER_TEXT
+    global ENABLE_EMERGENCY_RESCUE, ENABLE_INPUT_RESCUE, EMERGENCY_RESCUES
+
+    if request.method == 'GET' and request.path == '/':
+        html = """<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>ClawCut Web GUI</title>
+  <style>
+    @import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Fraunces:wght@600&display=swap");
+    :root {
+      --ink: #13231f;
+      --muted: #43605a;
+      --bg1: #f2efe6;
+      --bg2: #e7f0ef;
+      --card: #ffffff;
+      --line: #d7e1de;
+      --accent: #0f7d6d;
+      --accent-2: #f08a5d;
+      --shadow: 0 10px 30px rgba(15, 32, 29, 0.12);
+    }
+    body.dark {
+      --ink: #e7efe9;
+      --muted: #9bb2ad;
+      --bg1: #0b1b18;
+      --bg2: #112622;
+      --card: #12221f;
+      --line: #234039;
+      --accent: #2aa690;
+      --accent-2: #e38b5b;
+      --shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Space Grotesk", sans-serif;
+      color: var(--ink);
+      background: radial-gradient(1200px 500px at 10% -10%, #f9d6b9 0%, transparent 60%),
+                  radial-gradient(1000px 600px at 110% 10%, #bfe8df 0%, transparent 55%),
+                  linear-gradient(160deg, var(--bg1), var(--bg2));
+      min-height: 100vh;
+    }
+    body.dark {
+      background: radial-gradient(1200px 500px at 10% -10%, #1f3c35 0%, transparent 60%),
+                  radial-gradient(1000px 600px at 110% 10%, #2f4b45 0%, transparent 55%),
+                  linear-gradient(160deg, var(--bg1), var(--bg2));
+    }
+    .shell {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 32px 20px 60px;
+    }
+    header {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 16px;
+      align-items: center;
+      margin-bottom: 24px;
+      animation: fadeUp 0.6s ease both;
+    }
+    .brand {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .brand .title {
+      font-family: "Fraunces", serif;
+      font-size: 34px;
+      letter-spacing: 0.5px;
+    }
+    .brand .subtitle {
+      color: var(--muted);
+      font-size: 14px;
+    }
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      justify-content: flex-end;
+    }
+    .checkbox-inline {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--muted);
+      padding: 6px 10px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #fbfaf6;
+    }
+    body.dark .checkbox-inline {
+      background: #0f201d;
+    }
+    button {
+      border: none;
+      padding: 10px 16px;
+      border-radius: 10px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    button.primary {
+      background: var(--accent);
+      color: #fff;
+      box-shadow: var(--shadow);
+    }
+    button.secondary {
+      background: #f6f3eb;
+      color: var(--ink);
+      border: 1px solid var(--line);
+    }
+    body.dark button.secondary {
+      background: #0f201d;
+      color: var(--ink);
+    }
+    button.warn {
+      background: var(--accent-2);
+      color: #fff;
+      box-shadow: var(--shadow);
+    }
+    button:active { transform: scale(0.98); }
+    main {
+      display: grid;
+      gap: 18px;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 18px;
+      box-shadow: var(--shadow);
+      animation: fadeUp 0.7s ease both;
+    }
+    .card h2 {
+      margin: 0 0 12px;
+      font-size: 18px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 12px;
+    }
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .field label {
+      font-size: 12px;
+      color: var(--muted);
+      letter-spacing: 0.3px;
+    }
+    input[type="text"], input[type="number"], textarea, select {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-family: inherit;
+      font-size: 14px;
+      background: #fff;
+      color: var(--ink);
+    }
+    body.dark input[type="text"], body.dark input[type="number"], body.dark textarea, body.dark select {
+      background: #0f201d;
+      color: var(--ink);
+      border-color: var(--line);
+    }
+    textarea { min-height: 90px; resize: vertical; }
+    .toggle {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 10px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #fbfaf6;
+    }
+    body.dark .toggle {
+      background: #0f201d;
+    }
+    .profile-list, .rescue-list {
+      display: grid;
+      gap: 12px;
+    }
+    .log-viewer {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: #0f1d1a;
+      color: #e6f1ee;
+      padding: 12px;
+      white-space: pre-wrap;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      line-height: 1.2;
+      height: calc(50 * 1.2em);
+      overflow-y: auto;
+      overflow-x: hidden;
+    }
+    body.dark .log-viewer {
+      background: #0b1412;
+      color: #d9e7e2;
+    }
+    .profile-card, .rescue-card {
+      border: 1px dashed #c7d3cf;
+      border-radius: 14px;
+      padding: 12px;
+      background: #fcfbf8;
+    }
+    body.dark .profile-card, body.dark .rescue-card {
+      background: #12221f;
+      border-color: #234039;
+    }
+    .row {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .row .spacer { flex: 1 1 auto; }
+    .hint {
+      color: var(--muted);
+      font-size: 12px;
+      margin-top: 6px;
+    }
+    #toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: #0f7d6d;
+      color: #fff;
+      padding: 12px 16px;
+      border-radius: 12px;
+      opacity: 0;
+      transform: translateY(10px);
+      transition: opacity 0.3s ease, transform 0.3s ease;
+      pointer-events: none;
+      box-shadow: var(--shadow);
+    }
+    #toast.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    @media (max-width: 720px) {
+      header { grid-template-columns: 1fr; }
+      .actions { justify-content: flex-start; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header>
+      <div class="brand">
+        <div class="title">ClawCut Control</div>
+        <div class="subtitle">Web GUI for profiles, proxy settings, and restart</div>
+      </div>
+      <div class="actions">
+        <label class="checkbox-inline"><input type="checkbox" id="EMPTY_LOGS_ON_RELOAD"/> Empty logs on Restart</label>
+        <button class="secondary" id="reloadBtn">Reload GUI</button>
+        <button class="primary" id="saveBtn">Save Config</button>
+        <button class="warn" id="restartBtn">Restart With Profile</button>
+        <button class="secondary" id="resetLogsBtn">Reset Logfiles</button>
+        <button class="secondary" id="themeToggle">Toggle Dark Mode</button>
+      </div>
+    </header>
+
+    <main>
+      <section class="card">
+        <h2>Active Profile</h2>
+        <div class="field">
+          <label for="SELECTED_PROFILE">SELECTED_PROFILE</label>
+          <select id="SELECTED_PROFILE"></select>
+        </div>
+        <div class="hint">Profilwechsel wird erst nach Restart aktiv.</div>
+      </section>
+
+      <section class="card">
+        <h2>LLM Profiles</h2>
+        <div class="profile-list" id="profiles"></div>
+        <div class="row" style="margin-top:10px;">
+          <button class="secondary" id="addProfile">Add Profile</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Logging</h2>
+        <div class="grid">
+          <div class="toggle"><input type="checkbox" id="DEBUG_MODE"/> <label for="DEBUG_MODE">DEBUG_MODE</label></div>
+          <div class="toggle"><input type="checkbox" id="WRITE_TO_LOGFILE"/> <label for="WRITE_TO_LOGFILE">WRITE_TO_LOGFILE</label></div>
+          <div class="field">
+            <label for="PATH_TO_LOGFILE">PATH_TO_LOGFILE</label>
+            <input type="text" id="PATH_TO_LOGFILE"/>
+          </div>
+          <div class="field">
+            <label for="DELETE_LOG_SIZE">DELETE_LOG_SIZE</label>
+            <input type="text" id="DELETE_LOG_SIZE"/>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Smart Amnesia</h2>
+        <div class="grid">
+          <div class="toggle"><input type="checkbox" id="ENABLE_SMART_AMNESIA"/> <label for="ENABLE_SMART_AMNESIA">ENABLE_SMART_AMNESIA</label></div>
+          <div class="field">
+            <label for="CHAT_HISTORY_LIMIT">CHAT_HISTORY_LIMIT</label>
+            <input type="number" id="CHAT_HISTORY_LIMIT" min="0"/>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Auto Delivery</h2>
+        <div class="grid">
+          <div class="toggle"><input type="checkbox" id="FORCE_AUTO_DELIVERY"/> <label for="FORCE_AUTO_DELIVERY">FORCE_AUTO_DELIVERY</label></div>
+          <div class="toggle"><input type="checkbox" id="FORCE_CRON_DELIVERY"/> <label for="FORCE_CRON_DELIVERY">FORCE_CRON_DELIVERY</label></div>
+          <div class="field">
+            <label for="AUTO_DELIVERY_CHANNEL">AUTO_DELIVERY_CHANNEL</label>
+            <input type="text" id="AUTO_DELIVERY_CHANNEL"/>
+          </div>
+          <div class="field">
+            <label for="AUTO_DELIVERY_TARGET">AUTO_DELIVERY_TARGET</label>
+            <input type="text" id="AUTO_DELIVERY_TARGET"/>
+          </div>
+          <div class="field">
+            <label for="AUDIO_DELIVERY_MESSAGE">AUDIO_DELIVERY_MESSAGE</label>
+            <input type="text" id="AUDIO_DELIVERY_MESSAGE"/>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Prompt Trimming</h2>
+        <div class="grid">
+          <div class="toggle"><input type="checkbox" id="ENABLE_PROMPT_TRIMMING"/> <label for="ENABLE_PROMPT_TRIMMING">ENABLE_PROMPT_TRIMMING</label></div>
+          <div class="field">
+            <label for="TRIM_SKILLS">TRIM_SKILLS (comma separated)</label>
+            <input type="text" id="TRIM_SKILLS"/>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Attention Forcer</h2>
+        <div class="grid">
+          <div class="toggle"><input type="checkbox" id="ENABLE_ATTENTION_FORCER"/> <label for="ENABLE_ATTENTION_FORCER">ENABLE_ATTENTION_FORCER</label></div>
+          <div class="field">
+            <label for="ATTENTION_FORCER_TEXT">ATTENTION_FORCER_TEXT</label>
+            <textarea id="ATTENTION_FORCER_TEXT"></textarea>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Rescue & Scripts</h2>
+        <div class="grid">
+          <div class="toggle"><input type="checkbox" id="ENABLE_EMERGENCY_RESCUE"/> <label for="ENABLE_EMERGENCY_RESCUE">ENABLE_EMERGENCY_RESCUE</label></div>
+          <div class="toggle"><input type="checkbox" id="ENABLE_INPUT_RESCUE"/> <label for="ENABLE_INPUT_RESCUE">ENABLE_INPUT_RESCUE</label></div>
+          <div class="field">
+            <label for="EXPECTED_SCRIPT_BASE_PATH">EXPECTED_SCRIPT_BASE_PATH</label>
+            <input type="text" id="EXPECTED_SCRIPT_BASE_PATH"/>
+          </div>
+        </div>
+        <div class="rescue-list" id="rescues" style="margin-top:12px;"></div>
+        <div class="row" style="margin-top:10px;">
+          <button class="secondary" id="addRescue">Add Rescue</button>
+        </div>
+        <div class="field" style="margin-top:12px;">
+          <label><input type="checkbox" id="AUTO_SCROLL_LOGS" checked/> Autoscroll</label>
+          <label>Logfile (last lines)</label>
+          <pre class="log-viewer" id="logViewer"></pre>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div id="toast">Saved</div>
+
+  <script>
+    const byId = (id) => document.getElementById(id);
+    const profilesWrap = byId("profiles");
+    const rescuesWrap = byId("rescues");
+    const selectedProfileSelect = byId("SELECTED_PROFILE");
+    const logViewer = byId("logViewer");
+    const emptyOnReload = byId("EMPTY_LOGS_ON_RELOAD");
+    const autoScrollLogs = byId("AUTO_SCROLL_LOGS");
+
+    function showToast(text) {
+      const toast = byId("toast");
+      toast.textContent = text;
+      toast.classList.add("show");
+      setTimeout(() => toast.classList.remove("show"), 2200);
+    }
+
+    function addProfileCard(name, data) {
+      const card = document.createElement("div");
+      card.className = "profile-card";
+      card.innerHTML = `
+        <div class="row">
+          <strong>Profile</strong>
+          <div class="spacer"></div>
+          <button class="secondary remove-profile">Remove</button>
+        </div>
+        <div class="grid" style="margin-top:10px;">
+          <div class="field"><label>Name</label><input type="text" class="profile-name" value="${name || ""}"/></div>
+          <div class="field"><label>ip</label><input type="text" class="profile-ip" value="${data.ip || ""}"/></div>
+          <div class="field"><label>port</label><input type="number" class="profile-port" value="${data.port || ""}"/></div>
+          <div class="field"><label>base_url</label><input type="text" class="profile-base_url" value="${data.base_url || ""}"/></div>
+          <div class="field"><label>api_key</label><input type="text" class="profile-api_key" value="${data.api_key || ""}"/></div>
+          <div class="field"><label>model_id</label><input type="text" class="profile-model_id" value="${data.model_id || ""}"/></div>
+          <div class="field"><label>model_name</label><input type="text" class="profile-model_name" value="${data.model_name || ""}"/></div>
+          <div class="field"><label>pass_through</label>
+            <select class="profile-pass_through">
+              <option value="false">Off (False)</option>
+              <option value="small">Small</option>
+              <option value="full">Full</option>
+            </select>
+          </div>
+          <div class="field" style="grid-column: 1 / -1;"><label>headers (JSON)</label><textarea class="profile-headers">${data.headers ? JSON.stringify(data.headers, null, 2) : ""}</textarea></div>
+        </div>
+      `;
+      const passSelect = card.querySelector(".profile-pass_through");
+      const pt = data.pass_through;
+      if (pt === "small") passSelect.value = "small";
+      else if (pt === "full") passSelect.value = "full";
+      else passSelect.value = "false";
+      card.querySelector(".remove-profile").addEventListener("click", () => card.remove());
+      profilesWrap.appendChild(card);
+    }
+
+    function addRescueCard(data) {
+      const card = document.createElement("div");
+      card.className = "rescue-card";
+      const keywords = Array.isArray(data.keywords) ? data.keywords.join(", ") : "";
+      card.innerHTML = `
+        <div class="row">
+          <strong>Rescue</strong>
+          <div class="spacer"></div>
+          <button class="secondary remove-rescue">Remove</button>
+        </div>
+        <div class="grid" style="margin-top:10px;">
+          <div class="field"><label>keywords</label><input type="text" class="rescue-keywords" value="${keywords}"/></div>
+          <div class="field" style="grid-column: 1 / -1;"><label>command</label><input type="text" class="rescue-command" value="${data.command || ""}"/></div>
+        </div>
+      `;
+      card.querySelector(".remove-rescue").addEventListener("click", () => card.remove());
+      rescuesWrap.appendChild(card);
+    }
+
+    async function loadLogs() {
+      const res = await fetch("/api/logs");
+      const out = await res.json();
+      if (out && out.log !== undefined) {
+        logViewer.textContent = out.log;
+        if (autoScrollLogs.checked) {
+          logViewer.scrollTop = logViewer.scrollHeight;
+        }
+      }
+    }
+
+    async function resetLogs() {
+      const res = await fetch("/api/logs/reset", { method: "POST" });
+      const out = await res.json();
+      if (!out.ok) throw new Error(out.error || "Reset failed");
+      await loadLogs();
+      showToast("Logs reset");
+    }
+
+    async function loadConfig() {
+      const res = await fetch("/api/config");
+      const cfg = await res.json();
+
+      selectedProfileSelect.innerHTML = "";
+      Object.keys(cfg.PROFILES || {}).forEach((name) => {
+        const opt = document.createElement("option");
+        opt.value = name;
+        opt.textContent = name;
+        selectedProfileSelect.appendChild(opt);
+      });
+      selectedProfileSelect.value = cfg.SELECTED_PROFILE || "";
+
+      byId("DEBUG_MODE").checked = !!cfg.DEBUG_MODE;
+      byId("WRITE_TO_LOGFILE").checked = !!cfg.WRITE_TO_LOGFILE;
+      byId("PATH_TO_LOGFILE").value = cfg.PATH_TO_LOGFILE || "";
+      byId("DELETE_LOG_SIZE").value = cfg.DELETE_LOG_SIZE || "";
+
+      byId("ENABLE_SMART_AMNESIA").checked = !!cfg.ENABLE_SMART_AMNESIA;
+      byId("CHAT_HISTORY_LIMIT").value = cfg.CHAT_HISTORY_LIMIT ?? 0;
+
+      byId("FORCE_AUTO_DELIVERY").checked = !!cfg.FORCE_AUTO_DELIVERY;
+      byId("FORCE_CRON_DELIVERY").checked = !!cfg.FORCE_CRON_DELIVERY;
+      byId("AUTO_DELIVERY_CHANNEL").value = cfg.AUTO_DELIVERY_CHANNEL || "";
+      byId("AUTO_DELIVERY_TARGET").value = cfg.AUTO_DELIVERY_TARGET || "";
+      byId("AUDIO_DELIVERY_MESSAGE").value = cfg.AUDIO_DELIVERY_MESSAGE || "";
+
+      byId("ENABLE_PROMPT_TRIMMING").checked = !!cfg.ENABLE_PROMPT_TRIMMING;
+      byId("TRIM_SKILLS").value = Array.isArray(cfg.TRIM_SKILLS) ? cfg.TRIM_SKILLS.join(", ") : "";
+
+      byId("ENABLE_ATTENTION_FORCER").checked = !!cfg.ENABLE_ATTENTION_FORCER;
+      byId("ATTENTION_FORCER_TEXT").value = cfg.ATTENTION_FORCER_TEXT || "";
+
+      byId("ENABLE_EMERGENCY_RESCUE").checked = !!cfg.ENABLE_EMERGENCY_RESCUE;
+      byId("ENABLE_INPUT_RESCUE").checked = !!cfg.ENABLE_INPUT_RESCUE;
+      byId("EXPECTED_SCRIPT_BASE_PATH").value = cfg.EXPECTED_SCRIPT_BASE_PATH || "";
+
+      profilesWrap.innerHTML = "";
+      Object.entries(cfg.PROFILES || {}).forEach(([name, data]) => addProfileCard(name, data || {}));
+
+      rescuesWrap.innerHTML = "";
+      (cfg.EMERGENCY_RESCUES || []).forEach((r) => addRescueCard(r || {}));
+    }
+
+    function gatherConfig() {
+      const profiles = {};
+      document.querySelectorAll(".profile-card").forEach((card) => {
+        const name = card.querySelector(".profile-name").value.trim();
+        if (!name) return;
+        const data = {};
+        const ip = card.querySelector(".profile-ip").value.trim();
+        if (ip) data.ip = ip;
+        const portVal = card.querySelector(".profile-port").value.trim();
+        if (portVal !== "") data.port = Number(portVal);
+        const baseUrl = card.querySelector(".profile-base_url").value.trim();
+        if (baseUrl) data.base_url = baseUrl;
+        const apiKey = card.querySelector(".profile-api_key").value.trim();
+        if (apiKey) data.api_key = apiKey;
+        const modelId = card.querySelector(".profile-model_id").value.trim();
+        if (modelId) data.model_id = modelId;
+        const modelName = card.querySelector(".profile-model_name").value.trim();
+        if (modelName) data.model_name = modelName;
+        const passVal = card.querySelector(".profile-pass_through").value;
+        data.pass_through = passVal === "false" ? false : passVal;
+        const headersVal = card.querySelector(".profile-headers").value.trim();
+        if (headersVal) {
+          try { data.headers = JSON.parse(headersVal); }
+          catch (e) { throw new Error("Invalid headers JSON in profile " + name); }
+        } else {
+          data.headers = {};
+        }
+        profiles[name] = data;
+      });
+
+      const rescues = [];
+      document.querySelectorAll(".rescue-card").forEach((card) => {
+        const keywords = card.querySelector(".rescue-keywords").value.split(",").map(k => k.trim()).filter(Boolean);
+        const command = card.querySelector(".rescue-command").value.trim();
+        if (keywords.length || command) rescues.push({ keywords, command });
+      });
+
+      return {
+        PROFILES: profiles,
+        SELECTED_PROFILE: selectedProfileSelect.value,
+        DEBUG_MODE: byId("DEBUG_MODE").checked,
+        WRITE_TO_LOGFILE: byId("WRITE_TO_LOGFILE").checked,
+        PATH_TO_LOGFILE: byId("PATH_TO_LOGFILE").value,
+        DELETE_LOG_SIZE: byId("DELETE_LOG_SIZE").value,
+        ENABLE_SMART_AMNESIA: byId("ENABLE_SMART_AMNESIA").checked,
+        CHAT_HISTORY_LIMIT: Number(byId("CHAT_HISTORY_LIMIT").value || 0),
+        FORCE_AUTO_DELIVERY: byId("FORCE_AUTO_DELIVERY").checked,
+        FORCE_CRON_DELIVERY: byId("FORCE_CRON_DELIVERY").checked,
+        AUTO_DELIVERY_CHANNEL: byId("AUTO_DELIVERY_CHANNEL").value,
+        AUTO_DELIVERY_TARGET: byId("AUTO_DELIVERY_TARGET").value,
+        EXPECTED_SCRIPT_BASE_PATH: byId("EXPECTED_SCRIPT_BASE_PATH").value,
+        AUDIO_DELIVERY_MESSAGE: byId("AUDIO_DELIVERY_MESSAGE").value,
+        ENABLE_PROMPT_TRIMMING: byId("ENABLE_PROMPT_TRIMMING").checked,
+        TRIM_SKILLS: byId("TRIM_SKILLS").value.split(",").map(k => k.trim()).filter(Boolean),
+        ENABLE_ATTENTION_FORCER: byId("ENABLE_ATTENTION_FORCER").checked,
+        ATTENTION_FORCER_TEXT: byId("ATTENTION_FORCER_TEXT").value,
+        ENABLE_EMERGENCY_RESCUE: byId("ENABLE_EMERGENCY_RESCUE").checked,
+        ENABLE_INPUT_RESCUE: byId("ENABLE_INPUT_RESCUE").checked,
+        EMERGENCY_RESCUES: rescues
+      };
+    }
+
+    byId("addProfile").addEventListener("click", () => addProfileCard("", {}));
+    byId("addRescue").addEventListener("click", () => addRescueCard({ keywords: [], command: "" }));
+    byId("reloadBtn").addEventListener("click", async () => {
+      if (emptyOnReload.checked) await resetLogs();
+      await loadConfig();
+      await loadLogs();
+      showToast("Reloaded");
+    });
+    byId("resetLogsBtn").addEventListener("click", async () => {
+      try { await resetLogs(); }
+      catch (e) { showToast(e.message || "Reset failed"); }
+    });
+    byId("themeToggle").addEventListener("click", () => {
+      const next = !document.body.classList.contains("dark");
+      document.body.classList.toggle("dark", next);
+      localStorage.setItem("clawcut_theme", next ? "dark" : "light");
+    });
+
+    byId("saveBtn").addEventListener("click", async () => {
+      try {
+        const payload = gatherConfig();
+        const res = await fetch("/api/config", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        const out = await res.json();
+        if (!out.ok) throw new Error(out.error || "Save failed");
+        await loadConfig();
+        showToast("Config saved");
+      } catch (e) {
+        showToast(e.message || "Save failed");
+      }
+    });
+
+    byId("restartBtn").addEventListener("click", async () => {
+      try {
+        if (emptyOnReload.checked) await resetLogs();
+        const res = await fetch("/api/restart", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ profile: selectedProfileSelect.value })
+        });
+        const out = await res.json();
+        if (!out.ok) throw new Error(out.error || "Restart failed");
+        showToast("Restarting...");
+      } catch (e) {
+        showToast(e.message || "Restart failed");
+      }
+    });
+
+    async function loadConfigWithRetry(attempts = 5) {
+    for (let i = 0; i < attempts; i++) {
+    try {
+      await loadConfig();
+      return;
+    } catch (e) {
+      await new Promise(r => setTimeout(r, 500));
+    }
+  }
+}
+
+const savedTheme = localStorage.getItem("clawcut_theme");
+if (savedTheme === "dark") document.body.classList.add("dark");
+loadConfigWithRetry().then(() => loadLogs());
+setInterval(loadLogs, 1000);
+  </script>
+</body>
+</html>"""
+        return Response(html, content_type='text/html')
+
+    if request.path == '/api/logs':
+        try:
+            log_text = ""
+            if os.path.exists(PATH_TO_LOGFILE):
+                with open(PATH_TO_LOGFILE, "r", encoding="utf-8", errors="replace") as _log_file:
+                    log_text = _log_file.read()
+            if log_text:
+                lines = log_text.splitlines()
+                if len(lines) > 500:
+                    lines = lines[-500:]
+                log_text = "\n".join(lines)
+            return Response(json.dumps({"ok": True, "log": log_text}, ensure_ascii=False), content_type='application/json')
+        except Exception as e:
+            return json.dumps({"ok": False, "error": str(e)}), 500
+
+    if request.path == '/api/logs/reset':
+        try:
+            with open(PATH_TO_LOGFILE, "w", encoding="utf-8") as _log_file:
+                _log_file.write("")
+            return json.dumps({"ok": True}), 200
+        except Exception as e:
+            return json.dumps({"ok": False, "error": str(e)}), 500
+
+    if request.path == '/api/config':
+        if request.method == 'GET':
+            return Response(json.dumps({
+                "PROFILES": PROFILES,
+                "SELECTED_PROFILE": SELECTED_PROFILE,
+                "DEBUG_MODE": DEBUG_MODE,
+                "WRITE_TO_LOGFILE": WRITE_TO_LOGFILE,
+                "PATH_TO_LOGFILE": PATH_TO_LOGFILE,
+                "DELETE_LOG_SIZE": DELETE_LOG_SIZE,
+                "ENABLE_SMART_AMNESIA": ENABLE_SMART_AMNESIA,
+                "CHAT_HISTORY_LIMIT": CHAT_HISTORY_LIMIT,
+                "FORCE_AUTO_DELIVERY": FORCE_AUTO_DELIVERY,
+                "FORCE_CRON_DELIVERY": FORCE_CRON_DELIVERY,
+                "AUTO_DELIVERY_CHANNEL": AUTO_DELIVERY_CHANNEL,
+                "AUTO_DELIVERY_TARGET": AUTO_DELIVERY_TARGET,
+                "EXPECTED_SCRIPT_BASE_PATH": EXPECTED_SCRIPT_BASE_PATH,
+                "AUDIO_DELIVERY_MESSAGE": AUDIO_DELIVERY_MESSAGE,
+                "ENABLE_PROMPT_TRIMMING": ENABLE_PROMPT_TRIMMING,
+                "TRIM_SKILLS": TRIM_SKILLS,
+                "ENABLE_ATTENTION_FORCER": ENABLE_ATTENTION_FORCER,
+                "ATTENTION_FORCER_TEXT": ATTENTION_FORCER_TEXT,
+                "ENABLE_EMERGENCY_RESCUE": ENABLE_EMERGENCY_RESCUE,
+                "ENABLE_INPUT_RESCUE": ENABLE_INPUT_RESCUE,
+                "EMERGENCY_RESCUES": EMERGENCY_RESCUES
+            }, ensure_ascii=False), content_type='application/json')
+
+        incoming = request.json or {}
+        if isinstance(incoming.get("PROFILES"), dict): PROFILES = incoming["PROFILES"]
+        if "SELECTED_PROFILE" in incoming: SELECTED_PROFILE = incoming["SELECTED_PROFILE"]
+        if "DEBUG_MODE" in incoming: DEBUG_MODE = incoming["DEBUG_MODE"]
+        if "WRITE_TO_LOGFILE" in incoming: WRITE_TO_LOGFILE = incoming["WRITE_TO_LOGFILE"]
+        if "PATH_TO_LOGFILE" in incoming: PATH_TO_LOGFILE = incoming["PATH_TO_LOGFILE"]
+        if "DELETE_LOG_SIZE" in incoming: DELETE_LOG_SIZE = incoming["DELETE_LOG_SIZE"]
+        if "ENABLE_SMART_AMNESIA" in incoming: ENABLE_SMART_AMNESIA = incoming["ENABLE_SMART_AMNESIA"]
+        if "CHAT_HISTORY_LIMIT" in incoming: CHAT_HISTORY_LIMIT = incoming["CHAT_HISTORY_LIMIT"]
+        if "FORCE_AUTO_DELIVERY" in incoming: FORCE_AUTO_DELIVERY = incoming["FORCE_AUTO_DELIVERY"]
+        if "FORCE_CRON_DELIVERY" in incoming: FORCE_CRON_DELIVERY = incoming["FORCE_CRON_DELIVERY"]
+        if "AUTO_DELIVERY_CHANNEL" in incoming: AUTO_DELIVERY_CHANNEL = incoming["AUTO_DELIVERY_CHANNEL"]
+        if "AUTO_DELIVERY_TARGET" in incoming: AUTO_DELIVERY_TARGET = incoming["AUTO_DELIVERY_TARGET"]
+        if "EXPECTED_SCRIPT_BASE_PATH" in incoming: EXPECTED_SCRIPT_BASE_PATH = incoming["EXPECTED_SCRIPT_BASE_PATH"]
+        if "AUDIO_DELIVERY_MESSAGE" in incoming: AUDIO_DELIVERY_MESSAGE = incoming["AUDIO_DELIVERY_MESSAGE"]
+        if "ENABLE_PROMPT_TRIMMING" in incoming: ENABLE_PROMPT_TRIMMING = incoming["ENABLE_PROMPT_TRIMMING"]
+        if "TRIM_SKILLS" in incoming: TRIM_SKILLS = incoming["TRIM_SKILLS"]
+        if "ENABLE_ATTENTION_FORCER" in incoming: ENABLE_ATTENTION_FORCER = incoming["ENABLE_ATTENTION_FORCER"]
+        if "ATTENTION_FORCER_TEXT" in incoming: ATTENTION_FORCER_TEXT = incoming["ATTENTION_FORCER_TEXT"]
+        if "ENABLE_EMERGENCY_RESCUE" in incoming: ENABLE_EMERGENCY_RESCUE = incoming["ENABLE_EMERGENCY_RESCUE"]
+        if "ENABLE_INPUT_RESCUE" in incoming: ENABLE_INPUT_RESCUE = incoming["ENABLE_INPUT_RESCUE"]
+        if "EMERGENCY_RESCUES" in incoming: EMERGENCY_RESCUES = incoming["EMERGENCY_RESCUES"]
+
+        if SELECTED_PROFILE not in PROFILES and PROFILES:
+            SELECTED_PROFILE = list(PROFILES.keys())[0]
+
+        try:
+            with open(_config_path, "w", encoding="utf-8") as _cfg_out:
+                json.dump({
+                    "PROFILES": PROFILES,
+                    "SELECTED_PROFILE": SELECTED_PROFILE,
+                    "DEBUG_MODE": DEBUG_MODE,
+                    "WRITE_TO_LOGFILE": WRITE_TO_LOGFILE,
+                    "PATH_TO_LOGFILE": PATH_TO_LOGFILE,
+                    "DELETE_LOG_SIZE": DELETE_LOG_SIZE,
+                    "ENABLE_SMART_AMNESIA": ENABLE_SMART_AMNESIA,
+                    "CHAT_HISTORY_LIMIT": CHAT_HISTORY_LIMIT,
+                    "FORCE_AUTO_DELIVERY": FORCE_AUTO_DELIVERY,
+                    "FORCE_CRON_DELIVERY": FORCE_CRON_DELIVERY,
+                    "AUTO_DELIVERY_CHANNEL": AUTO_DELIVERY_CHANNEL,
+                    "AUTO_DELIVERY_TARGET": AUTO_DELIVERY_TARGET,
+                    "EXPECTED_SCRIPT_BASE_PATH": EXPECTED_SCRIPT_BASE_PATH,
+                    "AUDIO_DELIVERY_MESSAGE": AUDIO_DELIVERY_MESSAGE,
+                    "ENABLE_PROMPT_TRIMMING": ENABLE_PROMPT_TRIMMING,
+                    "TRIM_SKILLS": TRIM_SKILLS,
+                    "ENABLE_ATTENTION_FORCER": ENABLE_ATTENTION_FORCER,
+                    "ATTENTION_FORCER_TEXT": ATTENTION_FORCER_TEXT,
+                    "ENABLE_EMERGENCY_RESCUE": ENABLE_EMERGENCY_RESCUE,
+                    "ENABLE_INPUT_RESCUE": ENABLE_INPUT_RESCUE,
+                    "EMERGENCY_RESCUES": EMERGENCY_RESCUES
+                }, _cfg_out, indent=2, ensure_ascii=False)
+        except Exception as e:
+            return json.dumps({"ok": False, "error": str(e)}), 500
+
+        return json.dumps({"ok": True, "selected_profile": SELECTED_PROFILE}), 200
+
+    if request.path == '/api/restart':
+        incoming = request.json or {}
+        profile = incoming.get("profile") or SELECTED_PROFILE
+        if isinstance(profile, str) and profile in PROFILES:
+            SELECTED_PROFILE = profile
+        if SELECTED_PROFILE not in PROFILES and PROFILES:
+            SELECTED_PROFILE = list(PROFILES.keys())[0]
+        try:
+            with open(_config_path, "w", encoding="utf-8") as _cfg_out:
+                json.dump({
+                    "PROFILES": PROFILES,
+                    "SELECTED_PROFILE": SELECTED_PROFILE,
+                    "DEBUG_MODE": DEBUG_MODE,
+                    "WRITE_TO_LOGFILE": WRITE_TO_LOGFILE,
+                    "PATH_TO_LOGFILE": PATH_TO_LOGFILE,
+                    "DELETE_LOG_SIZE": DELETE_LOG_SIZE,
+                    "ENABLE_SMART_AMNESIA": ENABLE_SMART_AMNESIA,
+                    "CHAT_HISTORY_LIMIT": CHAT_HISTORY_LIMIT,
+                    "FORCE_AUTO_DELIVERY": FORCE_AUTO_DELIVERY,
+                    "FORCE_CRON_DELIVERY": FORCE_CRON_DELIVERY,
+                    "AUTO_DELIVERY_CHANNEL": AUTO_DELIVERY_CHANNEL,
+                    "AUTO_DELIVERY_TARGET": AUTO_DELIVERY_TARGET,
+                    "EXPECTED_SCRIPT_BASE_PATH": EXPECTED_SCRIPT_BASE_PATH,
+                    "AUDIO_DELIVERY_MESSAGE": AUDIO_DELIVERY_MESSAGE,
+                    "ENABLE_PROMPT_TRIMMING": ENABLE_PROMPT_TRIMMING,
+                    "TRIM_SKILLS": TRIM_SKILLS,
+                    "ENABLE_ATTENTION_FORCER": ENABLE_ATTENTION_FORCER,
+                    "ATTENTION_FORCER_TEXT": ATTENTION_FORCER_TEXT,
+                    "ENABLE_EMERGENCY_RESCUE": ENABLE_EMERGENCY_RESCUE,
+                    "ENABLE_INPUT_RESCUE": ENABLE_INPUT_RESCUE,
+                    "EMERGENCY_RESCUES": EMERGENCY_RESCUES
+                }, _cfg_out, indent=2, ensure_ascii=False)
+        except Exception as e:
+            return json.dumps({"ok": False, "error": str(e)}), 500
+        try:
+            subprocess.Popen([sys.executable, __file__, f"-{SELECTED_PROFILE}", "-restart"])
+        except Exception as e:
+            return json.dumps({"ok": False, "error": str(e)}), 500
+        return json.dumps({"ok": True, "restarting": True}), 200
+
     start_time = time.time()
     try:
         ollama_data = request.json
@@ -395,7 +1264,7 @@ def proxy():
         original_messages = ollama_data.get('messages', [])
         requested_model = ollama_data.get('model', OPENCLAW_MODEL_ID)
         
-        
+        # NACHHER:
         if DEBUG_MODE:
             print(f"\n\n[DEBUG] {'='*60}")
             print(f"[DEBUG] REQUEST RECEIVED: {datetime.now().strftime('%H:%M:%S')}")
@@ -482,12 +1351,28 @@ def proxy():
         # Loop breaker for Gateway errors - Bypass if in pass-through mode
         if not PASS_THROUGH_MODE and original_messages and original_messages[-1].get('role') == 'tool':
             content_str = str(original_messages[-1].get('content', ''))
-            if "Message failed" in content_str or "No active WhatsApp" in content_str:
+            if "No active WhatsApp" in content_str:
+                # No WhatsApp listener = cron isolation problem, always stop
                 if DEBUG_MODE:
                     print("[DEBUG] Intercepted message tool failure. Stopping loop.")
-                def short_circuit():
-                    yield json.dumps({"model": requested_model, "created_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"), "message": {"role": "assistant", "content": ""}, "done": True}).encode('utf-8') + b'\n'
-                return Response(short_circuit(), content_type='application/x-ndjson')
+            elif "Message failed" in content_str:
+                # Only stop if the preceding tool_call had no 'to' target
+                # (Cron jobs without target fail silently; Heartbeat calls have a proper 'to')
+                last_tool_call_has_target = any(
+                    tc.get('function', {}).get('arguments', {}).get('to')
+                    for msg in original_messages
+                    if msg.get('role') == 'assistant'
+                    for tc in (msg.get('tool_calls') or [])
+                    if tc.get('function', {}).get('name') == 'message'
+                )
+                if not last_tool_call_has_target:
+                    if DEBUG_MODE:
+                        print("[DEBUG] Intercepted message tool failure (no target). Stopping loop.")
+                else:
+                    # Legitimate message call with target — let it through
+                    pass
+            else:
+                content_str = ""  # reset to skip the short_circuit below
 
         # --- SMART AMNESIA LOGIC ---
         
@@ -819,7 +1704,7 @@ if __name__ == '__main__':
         kill_other_instances()
 
     print(f"==========================================")
-    print(f"ClawCut Universal Proxy (V3.2.0)")
+    print(f"ClawCut Universal Proxy (V4.0.0)")
     _profile_target = cfg.get('base_url', f"{cfg.get('ip', '?')}:{cfg.get('port', '?')}")
     print(f"PROFILE SELECTED: {SELECTED_PROFILE.upper()} ({_profile_target})")
     print(f"MODEL USED: {cfg['model_name']}")
