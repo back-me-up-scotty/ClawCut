@@ -105,32 +105,41 @@ Point OpenClaw to the proxy. The `openclaw.json` stays exactly like this regardl
 
 ```json
 "models": {
-  "mode": "merge",
-  "providers": {
-    "ollama": {
-      "baseUrl": "http://127.0.0.1:5000/v1",
-      "apiKey": "ollama-local",
-      "api": "ollama",
-      "models": [
-        {
-          "id": "ollama/qwen2.5:14b",
-          "name": "qwen 2.5 14b",
-          "reasoning": false,
-          "input": ["text"],
-          "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 },
-          "contextWindow": 16384,
-          "maxTokens": 4096,
-          "compat": { "supportsDeveloperRole": false }
-        }
-      ]
+    "mode": "merge",
+    "providers": {
+      "ollama": {
+        "baseUrl": "http://127.0.0.1:5000/v1",
+        "apiKey": "ollama-local",
+        "api": "ollama",
+        "models": [
+          {
+            "id": "ollama/ClawCut",
+            "name": "ClawCut",
+            "reasoning": false,
+            "input": [
+              "text"
+            ],
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0
+            },
+            "contextWindow": 16384,
+            "maxTokens": 4096,
+            "compat": {
+              "supportsDeveloperRole": false
+            }
+          }
+        ]
+      }
     }
-  }
-},
-"agents": {
-  "defaults": {
-    "model": { "primary": "ollama/qwen2.5:14b" }
-  }
-}
+  },
+  "agents": {
+    "defaults": {
+      "model": {
+        "primary": "ollama/ClawCut"
+      },
 ```
 
 The only value that matters here is `"baseUrl": "http://127.0.0.1:5000/v1"`. Everything else — model name, API key, context window — is ignored and overridden by the active ClawCut profile.
