@@ -13,7 +13,7 @@ OpenClaw → ClawCut Proxy → Local LLM (MLX / Ollama)
                          → Cloud API  (NVIDIA / OpenAI / etc.)
 ```
 
-The specific model name in `openclaw.json` is irrelevant — ClawCut always overrides it with the active profile's model.
+The specific model name in `openclaw.json` is irrelevant — ClawCut always overrides it with the active profile's model. However, the provider prefix in the `id` field (e.g. `ollama/`) is **not** irrelevant: OpenClaw uses it to resolve the provider before routing the request. Without the correct prefix, OpenClaw fails before the proxy is ever involved.
 
 ---
 
@@ -134,6 +134,8 @@ Point OpenClaw to the proxy. The `openclaw.json` stays exactly like this regardl
 ```
 
 The only value that matters here is `"baseUrl": "http://127.0.0.1:5000/v1"`. Everything else — model name, API key, context window — is ignored and overridden by the active ClawCut profile.
+
+⚠️ **The `ollama/` prefix in the `id` field is not optional.** OpenClaw uses it to resolve the provider before routing the request. Without it, OpenClaw misidentifies the provider and fails before the proxy is ever involved — regardless of what `baseUrl` is set to.
 
 ---
 
