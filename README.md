@@ -1,4 +1,4 @@
-# ClawCut Universal LLM Bridge & Proxy 3.2.0
+# ClawCut Universal LLM Bridge & Proxy 4.0.0
 
 ClawCut is a proxy that sits between OpenClaw and any LLM — local or cloud. It solves the "Cognitive Overload" problem for small models, translates between API formats, and lets you switch between completely different backends (local Ollama, local MLX, NVIDIA cloud, OpenAI, etc.) by simply restarting with a different profile flag. Your `openclaw.json` never needs to change.
 
@@ -78,7 +78,7 @@ To give you an idea of the setup I use to run my LLM locally in combination with
 
 ### Prerequisites
 
-Python 3, Flask, requests:
+To execute ClawCut and the Dashboard you have to install Python 3, Flask and requests:
 
 ```bash
 # Linux / Raspberry Pi
@@ -149,7 +149,9 @@ Logs: openclaw logs --follow) and fails before the proxy is ever involved — re
 
 ## PROFILE CONFIGURATION
 
-Edit the `PROFILES` dict in `clawcut.py`. Profiles support both local servers and cloud APIs. You can add more profiles by simply extending this section.
+You can edit and configure ClawCut either directly via the `clawcut.py` file or simply through the web dashboard. To do this, start ClawCut 
+from the console (See -> "STARTING CLAWCUT") and then open your browser to `http://127.0.0.1:5000` or, if ClawCut is running on a different host, 
+`http://IP-Adresse:5000`. Profiles support both local servers and cloud APIs. 
 
 ```python
 PROFILES = {
@@ -228,6 +230,9 @@ The `pass_through` field in each profile controls how much ClawCut intervenes:
 ```
 
 The `-restart` flag kills any running ClawCut process before starting the new one. Profile flags (`-LLM1`, `-LLM2`, `-LLM3`, etc.) are dynamic — any profile name defined in `PROFILES` works.
+
+As soon as ClawCut is running, point your browser to `http://127.0.0.1:5000` or, if ClawCut is running on a different host, 
+`http://IP-Adresse:5000`.
 
 ---
 
