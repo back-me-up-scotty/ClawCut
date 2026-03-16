@@ -241,7 +241,7 @@ The `-restart` flag kills any running ClawCut process before starting the new on
 As soon as ClawCut is running, point your browser to `http://127.0.0.1:5000` or, if ClawCut is running on a different host,use
 `http://(IP-Address):5000`. 
 
-⚠️ After the first launch, ClawCut automatically creates the `config.json` file. It contains all the settings specified in the script itself. `config.json` is the sole source of truth after the first launch. The hardcoded values in the script are merely fallback defaults for the very first launch, when no `config.json` file yet exists. So, before running ClawCut for the first time, you should set the variables directly in the script to values that work for your setup. 
+⚠️ After the first launch, ClawCut automatically creates the `config.json` file. It contains all the settings specified in the script itself. `config.json` is the sole source of truth after the first launch. The hardcoded values in the script are merely fallback defaults for the very first launch, when no `config.json` file yet exists. So, before running ClawCut for the first time, you should set the variables directly in the script to values that work for your setup. The next time it runs, the script will load the config.json file and use it to override the hard-coded defaults in memory. The .py file itself will never be modified again. 
 
 ---
 
