@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-ClawCut - Universal LLM Bridge & Proxy (BETA) - v. 4.0.0
---------------------------------------------------------------------------------
+ClawCut - Universal LLM Bridge & Proxy (BETA) - v. 4.0.1
+-------------------------------------------------------------------------------
 LICENSE: ClawCut Personal & Non-Commercial License
 Copyright (c) 2026 Niels Gerhardt
 https://github.com/back-me-up-scotty/ClawCut
@@ -97,6 +97,7 @@ import time
 import logging
 import subprocess
 import signal
+import copy
 from datetime import datetime, timezone
 
 log = logging.getLogger('werkzeug')
@@ -133,12 +134,12 @@ PROFILES = {
         # baseUrl from openclaw.json → becomes the direct LLM target
         "base_url": "https://integrate.api.nvidia.com/v1/chat/completions",
         # apiKey from openclaw.json → used in Authorization header
-        "api_key": "nvapi-xxxxx",
+        "api_key": "nvapi-",
         # model id from openclaw.json models[].id
         "model_id": "moonshotai/kimi-k2.5",
         # model name from openclaw.json models[].name (or same as model_id)
         "model_name": "moonshotai/kimi-k2.5",
-        "pass_through": "full",      # Truly transparent: raw forward + logging only
+        "pass_through": "compat",      # Compatibility pass-through for cloud providers that need sanitized tool/history payloads
         # headers from openclaw.json → empty here, but can hold extras
         "headers": {},
        
@@ -202,9 +203,11 @@ if 'headers' in cfg:
 # False      → full proxy intervention (injection, amnesia, trimming, rescue)
 # "small"    → existing PASS_THROUGH_MODE: format translation only, no manipulation
 # "full"     → raw transparent forward, only logging is active
+# "compat"   → pass-through with compatibility sanitization for strict cloud endpoints
 _pass_through_cfg = cfg.get('pass_through', False)
 PASS_THROUGH_MODE = (_pass_through_cfg == "small")
 FULL_PASS_THROUGH_MODE = (_pass_through_cfg == "full")
+COMPAT_PASS_THROUGH_MODE = (_pass_through_cfg == "compat")
 
 # Logging & Storage Config
 
@@ -253,7 +256,7 @@ FORCE_AUTO_DELIVERY = False
 # Cron jobs lack a native chat interface, so OpenClaw's native routing won't show the text anywhere.
 FORCE_CRON_DELIVERY = False
 AUTO_DELIVERY_CHANNEL = "whatsapp"  
-AUTO_DELIVERY_TARGET = "+49123456789" 
+AUTO_DELIVERY_TARGET = "+49123456" 
 
 
 # ==========================================
@@ -270,7 +273,7 @@ AUTO_DELIVERY_TARGET = "+49123456789"
 EXPECTED_SCRIPT_BASE_PATH = "/home/user/"
 
 # Default message sent to the user when an audio file is delivered
-AUDIO_DELIVERY_MESSAGE = "Here is your audio."
+AUDIO_DELIVERY_MESSAGE = "Here is our audio."
 
 # 1. System Prompt Trimming (Cognitive Overload Protection)
 # If True, the proxy aggressively strips out the skills listed in TRIM_SKILLS before sending 
@@ -305,15 +308,15 @@ ENABLE_INPUT_RESCUE = False
 EMERGENCY_RESCUES = [
     {
         "keywords": ["wetter", "check"], 
-        "command": 'bash /home/user/weather.sh "Frankfurt"'
+        "command": 'bash /home/nhg/weather.sh "Frankfurt"'
     },
     {
         "keywords": ["diesel", "price"], 
-        "command": 'bash /home/user/.openclaw/workspace/skills/diesel-price/diesel_price.sh'
+        "command": 'bash /home/nhg/.openclaw/workspace/skills/diesel-price/diesel_price.sh'
     },
      {
-        "keywords": ["backup", "create"], 
-        "command": 'bash /home/user/.openclaw/workspace/skills/system_control/run_bmus.sh'
+        "keywords": ["backup", "make"], 
+        "command": 'bash /home/nhg/.openclaw/workspace/skills/system_control/run_bmus.sh'
     }
 ]
 # ==========================================
@@ -450,6 +453,79 @@ def extract_hallucinated_tools(text):
                             jsons.append((obj, start, i+1))
                     except Exception: pass
     return jsons
+
+def build_short_circuit_response(requested_model, tool_name, arguments):
+    def short_circuit_stream():
+        msg_obj = {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [{"function": {"name": tool_name, "arguments": arguments}}]
+        }
+        yield json.dumps({
+            "model": requested_model,
+            "created_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "message": msg_obj,
+            "done": False
+        }).encode('utf-8') + b'\n'
+        yield json.dumps({
+            "model": requested_model,
+            "created_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "message": {"role": "assistant", "content": ""},
+            "done": True
+        }).encode('utf-8') + b'\n'
+    return Response(short_circuit_stream(), content_type='application/x-ndjson')
+
+def clean_cloud_passthrough_messages(messages):
+    cleaned = []
+    had_tool_protocol = False
+
+    for m in copy.deepcopy(messages or []):
+        role = m.get('role')
+        content = m.get('content')
+
+        # Cloud/OpenAI-compatible backends often choke on historical tool turns.
+        # Keep the natural-language history, strip the tool protocol.
+        if role == 'tool':
+            had_tool_protocol = True
+            continue
+
+        if role == 'assistant':
+            if m.get('tool_calls'):
+                had_tool_protocol = True
+            m.pop('tool_calls', None)
+            if content is None:
+                m['content'] = ''
+                content = ''
+            if content in ('', []):
+                continue
+
+        cleaned.append(m)
+
+    merged = []
+    for m in cleaned:
+        if merged and merged[-1].get('role') == 'user' and m.get('role') == 'user':
+            prev_content = merged[-1].get('content', '')
+            new_content = m.get('content', '')
+            if new_content and new_content != prev_content:
+                merged[-1] = dict(merged[-1])
+                merged[-1]['content'] = prev_content + '\n\n' + new_content
+        else:
+            merged.append(m)
+
+    return merged, had_tool_protocol
+
+def sanitize_tool_schema(obj):
+    if isinstance(obj, dict):
+        obj.pop('patternProperties', None)
+        if obj.get('additionalProperties') is True:
+            del obj['additionalProperties']
+        if obj.get('properties') == {}:
+            del obj['properties']
+        for v in obj.values():
+            sanitize_tool_schema(v)
+    elif isinstance(obj, list):
+        for item in obj:
+            sanitize_tool_schema(item)
 
 @app.route('/', methods=['GET'])
 @app.route('/api/config', methods=['GET', 'POST'])
@@ -881,6 +957,7 @@ def proxy():
             <select class="profile-pass_through">
               <option value="false">Off (False)</option>
               <option value="small">Small</option>
+              <option value="compat">Compat</option>
               <option value="full">Full</option>
             </select>
           </div>
@@ -890,6 +967,7 @@ def proxy():
       const passSelect = card.querySelector(".profile-pass_through");
       const pt = data.pass_through;
       if (pt === "small") passSelect.value = "small";
+      else if (pt === "compat") passSelect.value = "compat";
       else if (pt === "full") passSelect.value = "full";
       else passSelect.value = "false";
       card.querySelector(".remove-profile").addEventListener("click", () => card.remove());
@@ -1280,17 +1358,12 @@ setInterval(loadLogs, 1000);
         # Exception: model name is always overridden from the active profile, since openclaw.json
         # always sends the local placeholder model name regardless of which profile is active.
         if FULL_PASS_THROUGH_MODE:
-            passthrough_data = dict(ollama_data)
+            passthrough_data = copy.deepcopy(ollama_data)
             passthrough_data['model'] = LLM_MODEL_IDENTIFIER
             passthrough_data.pop('tool_choice', None)
             passthrough_data.pop('options', None)
-            # Filter tool-result messages — these cause jinja2 errors on cloud APIs
-            if 'messages' in passthrough_data:
-                passthrough_data['messages'] = [
-                    m for m in passthrough_data['messages']
-                    if m.get('role') not in ('tool',)
-                    and m.get('content') not in (None, '', [])
-                ]
+            passthrough_data.pop('parallel_tool_calls', None)
+
             if DEBUG_MODE:
                 print(f"[DEBUG] FULL_PASS_THROUGH_MODE active — forwarding raw request.")
                 print(json.dumps(passthrough_data, indent=2, ensure_ascii=False))
@@ -1367,14 +1440,124 @@ setInterval(loadLogs, 1000);
                         "done": True
                     }).encode('utf-8') + b'\n'
 
-        print(f"[DEBUG] Finished in {time.time() - start_time:.2f}s | FULL_PASS_THROUGH")
-        return Response(full_passthrough_stream(), content_type='application/x-ndjson')
+            print(f"[DEBUG] Finished in {time.time() - start_time:.2f}s | FULL_PASS_THROUGH")
+            return Response(full_passthrough_stream(), content_type='application/x-ndjson')
+
+        # --- COMPAT PASS-THROUGH MODE ---
+        # COMPAT_PASS_THROUGH keeps the pass-through architecture intact, but applies
+        # a narrow compatibility layer for cloud endpoints that expose an OpenAI-like
+        # API while rejecting specific tool/history payload patterns. This mode exists
+        # specifically to preserve FULL_PASS_THROUGH as a truly transparent mode.
+        # Use COMPAT_PASS_THROUGH only when a provider requires schema/history cleanup.
+        if COMPAT_PASS_THROUGH_MODE:
+            passthrough_data = copy.deepcopy(ollama_data)
+            passthrough_data['model'] = LLM_MODEL_IDENTIFIER
+            passthrough_data.pop('tool_choice', None)
+            passthrough_data.pop('options', None)
+            passthrough_data.pop('parallel_tool_calls', None)
+
+            if 'messages' in passthrough_data:
+                passthrough_data['messages'], removed_tool_protocol = clean_cloud_passthrough_messages(
+                    passthrough_data['messages']
+                )
+            else:
+                removed_tool_protocol = False
+
+            if 'tools' in passthrough_data:
+                if removed_tool_protocol:
+                    passthrough_data.pop('tools', None)
+                else:
+                    sanitized_tools = copy.deepcopy(passthrough_data['tools'])
+                    for tool in sanitized_tools:
+                        sanitize_tool_schema(tool.get('function', {}).get('parameters', {}))
+                    passthrough_data['tools'] = sanitized_tools
+
+            if DEBUG_MODE:
+                print(f"[DEBUG] COMPAT_PASS_THROUGH_MODE active — forwarding compatibility-sanitized request.")
+                if removed_tool_protocol:
+                    print("[DEBUG] COMPAT_PASS_THROUGH: removed prior tool protocol from history for cloud compatibility.")
+                print(json.dumps(passthrough_data, indent=2, ensure_ascii=False))
+                print(f"[DEBUG] {'-'*60}")
+            raw_req = requests.post(LLM_SERVER_URL, json=passthrough_data, headers=LLM_REQUEST_HEADERS, stream=True, timeout=600)
+            if raw_req.status_code != 200:
+                return json.dumps({"error": f"LLM Server Error {raw_req.status_code}", "details": raw_req.text}), 502
+            def full_passthrough_stream():
+                merged_tools = {}
+                full_content = ""
+
+                for chunk in raw_req.iter_lines():
+                    if not chunk:
+                        continue
+                    line = chunk.decode('utf-8').strip()
+                    if DEBUG_MODE:
+                        print(f"[FULL-PT] {line}")
+                    if not line.startswith("data: "):
+                        continue
+                    data_str = line[6:]
+                    if data_str == "[DONE]":
+                        break
+                    try:
+                        data = json.loads(data_str)
+                        choices = data.get("choices", [])
+                        if not choices:
+                            continue
+                        delta = choices[0].get("delta", {})
+                        if delta.get("content"):
+                            full_content += delta["content"]
+                        if "tool_calls" in delta:
+                            for tc in delta["tool_calls"]:
+                                idx = tc.get("index", 0)
+                                if idx not in merged_tools:
+                                    merged_tools[idx] = {"name": "", "arguments": ""}
+                                if "function" in tc:
+                                    if tc["function"].get("name"):
+                                        merged_tools[idx]["name"] += tc["function"]["name"]
+                                    if tc["function"].get("arguments"):
+                                        merged_tools[idx]["arguments"] += tc["function"]["arguments"]
+                    except Exception:
+                        continue
+
+                try:
+                    final_tool_calls = []
+                    for idx, func in merged_tools.items():
+                        if func["name"]:
+                            args = func["arguments"]
+                            try:
+                                args = json.loads(args) if isinstance(args, str) else args
+                            except Exception:
+                                args = {}
+                            final_tool_calls.append({"function": {"name": func["name"], "arguments": args}})
+
+                    message_obj = {"role": "assistant", "content": full_content}
+                    if final_tool_calls:
+                        message_obj["tool_calls"] = final_tool_calls
+
+                    yield json.dumps({
+                        "model": requested_model,
+                        "created_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+                        "message": message_obj,
+                        "done": False
+                    }).encode('utf-8') + b'\n'
+
+                except Exception as e:
+                    print(f"[FULL-PT ERROR] {e}")
+
+                finally:
+                    yield json.dumps({
+                        "model": requested_model,
+                        "created_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+                        "message": {"role": "assistant", "content": ""},
+                        "done": True
+                    }).encode('utf-8') + b'\n'
+
+            print(f"[DEBUG] Finished in {time.time() - start_time:.2f}s | COMPAT_PASS_THROUGH")
+            return Response(full_passthrough_stream(), content_type='application/x-ndjson')
        
         # --- INPUT RESCUE (SHORT-CIRCUITING) ---
-        # Scans incoming messages (e.g. from Cron jobs) for keywords to bypass the LLM entirely.
-        # ONLY trigger if the LAST message is from the 'user'. 
-        # If the last message is a 'tool' result, we must not short-circuit, or we create an infinite loop!
-        if not PASS_THROUGH_MODE and ENABLE_INPUT_RESCUE and original_messages:
+        # This remains limited to the proxy-manipulation mode. FULL_PASS_THROUGH
+        # must stay transparent, and COMPAT_PASS_THROUGH must stay limited to
+        # compatibility cleanup rather than local command injection.
+        if not PASS_THROUGH_MODE and not COMPAT_PASS_THROUGH_MODE and original_messages:
             last_msg = original_messages[-1]
             if last_msg.get('role') == 'user':
                 last_user_msg = last_msg.get('content', '').lower()
@@ -1382,19 +1565,14 @@ setInterval(loadLogs, 1000);
                     if all(kw.lower() in last_user_msg for kw in rescue["keywords"]):
                         if DEBUG_MODE:
                             print(f"[DEBUG] INPUT-RESCUE TRIGGERED: Short-circuiting message to {rescue['command']}")
-                        
-                        def short_circuit_stream():
-                            msg_obj = {
-                                "role": "assistant",
-                                "content": "",
-                                "tool_calls": [{"function": {"name": "exec", "arguments": {"command": rescue["command"]}}}]
-                            }
-                            yield json.dumps({"model": requested_model, "created_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"), "message": msg_obj, "done": False}).encode('utf-8') + b'\n'
-                            yield json.dumps({"model": requested_model, "created_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"), "message": {"role": "assistant", "content": ""}, "done": True}).encode('utf-8') + b'\n'
-                        return Response(short_circuit_stream(), content_type='application/x-ndjson')
+                        return build_short_circuit_response(
+                            requested_model,
+                            "exec",
+                            {"command": rescue["command"]}
+                        )
 
         # Loop breaker for Gateway errors - Bypass if in pass-through mode
-        if not PASS_THROUGH_MODE and original_messages and original_messages[-1].get('role') == 'tool':
+        if not PASS_THROUGH_MODE and not COMPAT_PASS_THROUGH_MODE and original_messages and original_messages[-1].get('role') == 'tool':
             content_str = str(original_messages[-1].get('content', ''))
             if "No active WhatsApp" in content_str:
                 # No WhatsApp listener = cron isolation problem, always stop
@@ -1749,14 +1927,14 @@ if __name__ == '__main__':
         kill_other_instances()
 
     print(f"==========================================")
-    print(f"ClawCut Universal Proxy (V4.0.0)")
+    print(f"ClawCut Universal Proxy (V4.0.1)")
     _profile_target = cfg.get('base_url', f"{cfg.get('ip', '?')}:{cfg.get('port', '?')}")
     print(f"PROFILE SELECTED: {SELECTED_PROFILE.upper()} ({_profile_target})")
     print(f"MODEL USED: {cfg['model_name']}")
     print(f"PASS_THROUGH_MODE = {PASS_THROUGH_MODE}")
-    _pt_label = "FULL" if FULL_PASS_THROUGH_MODE else ("SMALL" if PASS_THROUGH_MODE else "OFF")
+    _pt_label = "FULL" if FULL_PASS_THROUGH_MODE else ("COMPAT" if COMPAT_PASS_THROUGH_MODE else ("SMALL" if PASS_THROUGH_MODE else "OFF"))
     print(f"PASS_THROUGH_MODE = {_pt_label}")
-    if not PASS_THROUGH_MODE and not FULL_PASS_THROUGH_MODE:
+    if not PASS_THROUGH_MODE and not FULL_PASS_THROUGH_MODE and not COMPAT_PASS_THROUGH_MODE:
         print(f"SMART_AMNESIA = {ENABLE_SMART_AMNESIA}")
         print(f"AUTO_DELIVERY = {FORCE_AUTO_DELIVERY} (Cron: {FORCE_CRON_DELIVERY}) -> {AUTO_DELIVERY_CHANNEL}:{AUTO_DELIVERY_TARGET}")
     if WRITE_TO_LOGFILE: print(f"LOGGING TO: {PATH_TO_LOGFILE} (Max Size: {DELETE_LOG_SIZE})")
