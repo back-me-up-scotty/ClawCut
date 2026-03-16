@@ -149,7 +149,7 @@ Logs: openclaw logs --follow) and fails before the proxy is ever involved — re
 
 ## PROFILE CONFIGURATION
 
-Edit the `PROFILES` dict in `clawcut.py`. Profiles support both local servers and cloud APIs.
+Edit the `PROFILES` dict in `clawcut.py`. Profiles support both local servers and cloud APIs. You can add more profiles by simply extending this section.
 
 ```python
 PROFILES = {
