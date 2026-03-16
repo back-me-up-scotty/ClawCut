@@ -142,7 +142,8 @@ Point OpenClaw to the proxy. The `openclaw.json` stays exactly like this regardl
 
 The only value that matters here is `"baseUrl": "http://127.0.0.1:5000/v1"`. Everything else — model name, API key, context window — is ignored and overridden by the active ClawCut profile.
 
-⚠️ **The `ollama/` prefix in the `id` field is not optional.** OpenClaw uses it to resolve the provider before routing the request. Without it, OpenClaw misidentifies the provider and fails before the proxy is ever involved — regardless of what `baseUrl` is set to.
+⚠️ **The `ollama/` prefix in the `id` field is not optional.** OpenClaw uses it to resolve the provider before routing the request. Without it, OpenClaw misidentifies the provider (⚠️ Agent failed before reply: Unknown model: anthropic/ClawCut.
+Logs: openclaw logs --follow) and fails before the proxy is ever involved — regardless of what `baseUrl` is set to.
 
 ---
 
