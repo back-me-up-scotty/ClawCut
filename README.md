@@ -205,7 +205,11 @@ PROFILES = {
 
 ## PASS-THROUGH MODES
 
-ClawCut supports four `pass_through` values. Despite the shared naming, these modes do **not** all behave the same way. Some are true pass-through styles, while others actively manipulate requests and responses. Note: Each model behaves differently within the same mode. It’s best to test your way down from “Full” or in the reverse order and see which behavior leads to the result you want—that is, achieving a good balance between response time and the quality of the answers.
+ClawCut supports four `pass_through` values. Despite the shared naming, these modes do **not** all behave the same way. Some are true pass-through styles, while others actively manipulate requests and responses. 
+
+Each model behaves differently within the same mode. It’s best to test your way down from “Full” or in the reverse order and see which behavior leads to the result you want—that is, achieving a good balance between response time and the quality of the answers. 
+
+For example, while I was able to get Qwen2.5-Coder-7B-Instruct-4bit to run tools just fine using the False setting and tool injection, Qwen3.5:9b did not respond at all when set to False. Conversely, Qwen2.5-Coder-7B-Instruct-4bit can no longer run tools when set to Small, Compact, or Full.
 
 | `pass_through` value | Behavior | What ClawCut does | Best used for |
 |---|---|---|---|
