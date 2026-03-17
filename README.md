@@ -205,14 +205,72 @@ PROFILES = {
 
 ## PASS-THROUGH MODES
 
-The `pass_through` field in each profile controls how much ClawCut intervenes:
+ClawCut supports four `pass_through` values. Despite the shared naming, these modes do **not** all behave the same way. Some are true pass-through styles, while others actively manipulate requests and responses.
 
-| Value | Mode | What happens |
-|-------|------|--------------|
-| `False` | **Full intervention** | Trimming, Smart Amnesia, Attention Forcer, Rescues — all active. Best for small local models (7B–8B). |
-| `"small"` | **Format translation** | No content manipulation. Only translates between OpenAI and Ollama formats. Best for powerful local models (14B+). |
-| `"compat"` | **Light passthrough** | For finicky cloud endpoints that are nominally OpenAI-compatible but fail due to tool history, schemas, or specific fields. |
-| `"full"` | **Cloud passthrough** | Raw forward to cloud API with stream translation. Strips Ollama-specific fields (`options`, `role: "tool"` messages). Best for cloud models. |
+| `pass_through` value | Behavior | What ClawCut does | Best used for |
+|---|---|---|---|
+| `false` | Full proxy intervention | Enables prompt trimming, smart amnesia, attention forcer, input rescue, emergency rescue, loop breaking, tool filtering/augmentation, and output cleanup | Small local models that need strong guidance and stabilization |
+| `"small"` | Format translation only | Keeps the translator pipeline between OpenClaw/Ollama-style input and OpenAI-style upstream requests, but skips the major intervention features | Stronger local models where you still want format bridging without heavy proxy behavior |
+| `"compat"` | Compatibility pass-through | Keeps the pass-through architecture, but sanitizes message history, tool protocol, and tool schemas for stricter cloud endpoints | Cloud providers that are nominally OpenAI-compatible but fail on tool history, schemas, or specific fields |
+| `"full"` | Raw pass-through | Forwards the request upstream with only minimal top-level cleanup and model override; no history cleanup, no tool sanitization, no rescue logic | Providers that already accept the payload as-is and where maximum transparency is desired |
+
+### Detailed Behavior
+
+#### `false`
+This is the most interventionist mode. ClawCut actively modifies both the request and the response to improve reliability.
+
+Enabled features include:
+- `SMART_AMNESIA`
+- prompt trimming
+- attention forcing
+- input rescue
+- emergency rescue
+- loop breaker logic
+- tool filtering and tool augmentation
+- output cleanup and tool-call reconstruction
+
+Use this mode when small models tend to get confused, forget tools, respond in prose instead of calling commands, or become unstable under large prompts.
+
+#### `"small"`
+This mode keeps the translation layer but disables the main proxy manipulation features.
+
+In practice, it:
+- translates between OpenClaw/Ollama-style payloads and OpenAI-style upstream requests
+- keeps stream reconstruction and tool-call reconstruction
+- does **not** apply prompt trimming, smart amnesia, attention forcing, input rescue, or emergency rescue
+
+Use this when you want a cleaner bridge layer without the stronger intervention logic.
+
+#### `"compat"`
+This mode exists for fragile cloud endpoints.
+
+It keeps the pass-through architecture, but adds a narrow compatibility layer that can:
+- remove prior `tool` messages from history
+- remove historical `assistant.tool_calls`
+- drop `tools` after prior tool protocol has appeared
+- sanitize tool schemas for stricter providers
+
+Use this when `"full"` fails because a provider claims OpenAI compatibility but crashes on real-world tool payloads.
+
+#### `"full"`
+This is the most transparent mode.
+
+It:
+- forwards the incoming request upstream
+- overrides the model to the currently selected profile
+- removes only a few top-level fields such as `options`, `tool_choice`, and `parallel_tool_calls`
+- does **not** clean history
+- does **not** sanitize tools
+- does **not** inject or rescue anything
+
+Use this when you want the proxy to stay as close to transparent as possible and the upstream provider is known to tolerate the payload.
+
+### Recommendation
+
+- Use `false` for weak or unstable local models.
+- Use `"small"` for stronger local models that still need format translation.
+- Use `"compat"` for strict cloud APIs that break in `"full"`.
+- Use `"full"` when you want maximum transparency and the provider already works with the raw payload.
 
 ---
 
