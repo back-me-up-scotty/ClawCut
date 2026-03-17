@@ -205,7 +205,7 @@ PROFILES = {
 
 ## PASS-THROUGH MODES
 
-ClawCut supports four `pass_through` values. Despite the shared naming, these modes do **not** all behave the same way. Some are true pass-through styles, while others actively manipulate requests and responses.
+ClawCut supports four `pass_through` values. Despite the shared naming, these modes do **not** all behave the same way. Some are true pass-through styles, while others actively manipulate requests and responses. Note: Each model behaves differently within the same mode. It’s best to test your way down from “Full” or in the reverse order and see which behavior leads to the result you want—that is, achieving a good balance between response time and the quality of the answers.
 
 | `pass_through` value | Behavior | What ClawCut does | Best used for |
 |---|---|---|---|
