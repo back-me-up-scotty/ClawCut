@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-ClawCut - Universal LLM Bridge & Proxy (BETA) - v. 4.0.1
+ClawCut - Universal LLM Bridge & Proxy (BETA) - v. 4.0.2
 -------------------------------------------------------------------------------
 LICENSE: ClawCut Personal & Non-Commercial License
 Copyright (c) 2026 Niels Gerhardt
@@ -115,7 +115,14 @@ app = Flask(__name__)
 # 192.168.x.x if it's on a remote machine or 127.0.0.1 if ClawCut and 
 # OpenClaw running on the same machine
 
+
 PROFILES = {
+    # Pass Through Values:
+    # False: Full intervention - Trimming, Smart Amnesia, Attention Forcer, Rescues — all active. Best for small local models (7B–8B).
+    # "small": Format translation - No content manipulation. Only translates between OpenAI and Ollama formats. Best for powerful local models (14B+).
+    # "compat":	Light passthrough - For finicky cloud endpoints that are nominally OpenAI-compatible but fail due to tool history, schemas, or specific fields.
+    # "full": Cloud passthrough -	Raw forward to cloud API with stream translation. Strips Ollama-specific fields (options, role: "tool" messages). Best for cloud models.
+
     "LLM1": {
         "ip": "192.168.0.xxx", # No api_key, no base_url → local, uses http://ip:port/v1/chat/completions
         "port": 8090,
@@ -128,7 +135,7 @@ PROFILES = {
         "port": 11434,
         "model_id": "ollama/mistral-nemo",
         "model_name": "mistral-nemo",
-        "pass_through": False     # Format translation only, no injection/manipulation
+        "pass_through": small     # Format translation only, no injection/manipulation
     },
     "LLM3": {
         # baseUrl from openclaw.json → becomes the direct LLM target
@@ -208,8 +215,6 @@ _pass_through_cfg = cfg.get('pass_through', False)
 PASS_THROUGH_MODE = (_pass_through_cfg == "small")
 FULL_PASS_THROUGH_MODE = (_pass_through_cfg == "full")
 COMPAT_PASS_THROUGH_MODE = (_pass_through_cfg == "compat")
-
-# Logging & Storage Config
 
 # Logging & Storage Config
 # DEBUG_MODE = True prints the full JSON payloads to the console (useful for troubleshooting).
@@ -800,9 +805,9 @@ def proxy():
       </div>
       <div class="actions">
         <label class="checkbox-inline"><input type="checkbox" id="EMPTY_LOGS_ON_RELOAD"/> Empty logs on Restart</label>
-        <button class="secondary" id="reloadBtn">Reload GUI</button>
-        <button class="primary" id="saveBtn">Save Config</button>
+        <button class="secondary" id="reloadBtn">Stop Server</button>
         <button class="warn" id="restartBtn">Restart With Profile</button>
+        <button class="primary" id="saveBtn">Save Config</button>        
         <button class="secondary" id="resetLogsBtn">Reset Logfiles</button>
         <button class="secondary" id="themeToggle">Toggle Dark Mode</button>
       </div>
@@ -1121,10 +1126,19 @@ def proxy():
     byId("addProfile").addEventListener("click", () => addProfileCard("", {}));
     byId("addRescue").addEventListener("click", () => addRescueCard({ keywords: [], command: "" }));
     byId("reloadBtn").addEventListener("click", async () => {
-      if (emptyOnReload.checked) await resetLogs();
-      await loadConfig();
-      await loadLogs();
-      showToast("Reloaded");
+      try {
+        if (emptyOnReload.checked) await resetLogs();
+        const res = await fetch("/api/restart", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({})
+        });
+        const out = await res.json();
+        if (!out.ok) throw new Error(out.error || "Stop failed");
+        showToast("Stopping...");
+      } catch (e) {
+        showToast(e.message || "Stop failed");
+      }
     });
     byId("resetLogsBtn").addEventListener("click", async () => {
       try { await resetLogs(); }
@@ -1296,6 +1310,12 @@ setInterval(loadLogs, 1000);
 
     if request.path == '/api/restart':
         incoming = request.json or {}
+        if "profile" not in incoming:
+            try:
+                subprocess.Popen([sys.executable, __file__, "-stop"])
+            except Exception as e:
+                return json.dumps({"ok": False, "error": str(e)}), 500
+            return json.dumps({"ok": True, "stopping": True}), 200
         profile = incoming.get("profile") or SELECTED_PROFILE
         if isinstance(profile, str) and profile in PROFILES:
             SELECTED_PROFILE = profile
@@ -1927,7 +1947,7 @@ if __name__ == '__main__':
         kill_other_instances()
 
     print(f"==========================================")
-    print(f"ClawCut Universal Proxy (V4.0.1)")
+    print(f"ClawCut Universal Proxy (V4.0.2)")
     _profile_target = cfg.get('base_url', f"{cfg.get('ip', '?')}:{cfg.get('port', '?')}")
     print(f"PROFILE SELECTED: {SELECTED_PROFILE.upper()} ({_profile_target})")
     print(f"MODEL USED: {cfg['model_name']}")
