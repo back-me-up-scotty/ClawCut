@@ -211,6 +211,7 @@ The `pass_through` field in each profile controls how much ClawCut intervenes:
 |-------|------|--------------|
 | `False` | **Full intervention** | Trimming, Smart Amnesia, Attention Forcer, Rescues — all active. Best for small local models (7B–8B). |
 | `"small"` | **Format translation** | No content manipulation. Only translates between OpenAI and Ollama formats. Best for powerful local models (14B+). |
+| `"compat"` | **Light passthrough** | For finicky cloud endpoints that are nominally OpenAI-compatible but fail due to tool history, schemas, or specific fields. |
 | `"full"` | **Cloud passthrough** | Raw forward to cloud API with stream translation. Strips Ollama-specific fields (`options`, `role: "tool"` messages). Best for cloud models. |
 
 ---
