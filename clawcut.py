@@ -312,7 +312,7 @@ ENABLE_EMERGENCY_RESCUE = True
 ENABLE_INPUT_RESCUE = False
 EMERGENCY_RESCUES = [
     {
-        "keywords": ["wetter", "check"], 
+        "keywords": ["weather", "check"], 
         "command": 'bash /home/nhg/weather.sh "Frankfurt"'
     },
     {
