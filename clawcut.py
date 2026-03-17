@@ -135,7 +135,7 @@ PROFILES = {
         "port": 11434,
         "model_id": "ollama/mistral-nemo",
         "model_name": "mistral-nemo",
-        "pass_through": small     # Format translation only, no injection/manipulation
+        "pass_through": "small"     # Format translation only, no injection/manipulation
     },
     "LLM3": {
         # baseUrl from openclaw.json → becomes the direct LLM target
