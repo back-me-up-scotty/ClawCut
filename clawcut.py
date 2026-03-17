@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-ClawCut - Universal LLM Bridge & Proxy (BETA) - v. 4.0.2
+ClawCut - Universal LLM Bridge & Proxy (BETA) - v. 4.0.4
 -------------------------------------------------------------------------------
 LICENSE: ClawCut Personal & Non-Commercial License
 Copyright (c) 2026 Niels Gerhardt
@@ -261,7 +261,7 @@ FORCE_AUTO_DELIVERY = False
 # Cron jobs lack a native chat interface, so OpenClaw's native routing won't show the text anywhere.
 FORCE_CRON_DELIVERY = False
 AUTO_DELIVERY_CHANNEL = "whatsapp"  
-AUTO_DELIVERY_TARGET = "+49123456" 
+AUTO_DELIVERY_TARGET = "+49123456789" 
 
 
 # ==========================================
@@ -278,7 +278,7 @@ AUTO_DELIVERY_TARGET = "+49123456"
 EXPECTED_SCRIPT_BASE_PATH = "/home/user/"
 
 # Default message sent to the user when an audio file is delivered
-AUDIO_DELIVERY_MESSAGE = "Here is our audio."
+AUDIO_DELIVERY_MESSAGE = "Here is your audio."
 
 # 1. System Prompt Trimming (Cognitive Overload Protection)
 # If True, the proxy aggressively strips out the skills listed in TRIM_SKILLS before sending 
@@ -300,19 +300,19 @@ ATTENTION_FORCER_TEXT = "\n\n[SYSTEM REMINDER: NEVER respond directly with text 
 # Useful if the model only describes what it wants to do, but forgets to output the actual JSON tool call.
 # If ENABLE_INPUT_RESCUE is True, this also triggers for incoming user requests (e.g. Cron jobs).
 #
-# Scripts down below are examples how to use. These are my own script I want OpenClaw to call. Change to
-# your scripts if you have some and set ENABLE_EMERGENCY_RESCUE = True
+# Keep this list empty in the generic source file. User-specific commands belong in config.json
+# or in the GUI configuration so the published proxy does not ship with hardcoded local paths.
 #
 # ENABLE_INPUT_RESCUE takes precedence over the LLM—it scans the incoming user message and bypasses the 
 # LLM entirely, going straight to the exec call without even consulting the LLM.
 # ENABLE_EMERGENCY_RESCUE intervenes after the LLM—it scans the LLM’s text response in `generate()` 
 # and converts recognized keywords into an `exec` call if the model forgot to use the tool.
 
-ENABLE_EMERGENCY_RESCUE = True
-ENABLE_INPUT_RESCUE = False
+ENABLE_EMERGENCY_RESCUE = False
+ENABLE_INPUT_RESCUE = True
 EMERGENCY_RESCUES = [
     {
-        "keywords": ["weather", "check"], 
+        "keywords": ["weather", "tell"], 
         "command": 'bash /home/nhg/weather.sh "Frankfurt"'
     },
     {
@@ -323,8 +323,7 @@ EMERGENCY_RESCUES = [
         "keywords": ["backup", "make"], 
         "command": 'bash /home/nhg/.openclaw/workspace/skills/system_control/run_bmus.sh'
     }
-]
-# ==========================================
+]# ==========================================
 
 if isinstance(_config_data, dict):
     if "DEBUG_MODE" in _config_data: DEBUG_MODE = _config_data["DEBUG_MODE"]
@@ -725,6 +724,9 @@ def proxy():
     body.dark .toggle {
       background: #0f201d;
     }
+    .toggle.disabled, .field.disabled {
+      opacity: 0.55;
+    }
     .profile-list, .rescue-list {
       display: grid;
       gap: 12px;
@@ -975,6 +977,8 @@ def proxy():
       else if (pt === "compat") passSelect.value = "compat";
       else if (pt === "full") passSelect.value = "full";
       else passSelect.value = "false";
+      passSelect.addEventListener("change", () => applyModeLocks());
+      card.querySelector(".profile-name").addEventListener("input", () => applyModeLocks());
       card.querySelector(".remove-profile").addEventListener("click", () => card.remove());
       profilesWrap.appendChild(card);
     }
@@ -1059,6 +1063,46 @@ def proxy():
 
       rescuesWrap.innerHTML = "";
       (cfg.EMERGENCY_RESCUES || []).forEach((r) => addRescueCard(r || {}));
+      applyModeLocks();
+    }
+
+    function setLockedState(id, locked, reason) {
+      const el = byId(id);
+      if (!el) return;
+      el.disabled = locked;
+      el.title = locked ? reason : "";
+      const wrap = el.closest(".toggle") || el.closest(".field");
+      if (wrap) {
+        wrap.classList.toggle("disabled", locked);
+        wrap.title = locked ? reason : "";
+      }
+    }
+
+    function getSelectedPassThroughValue() {
+      const selectedName = selectedProfileSelect.value;
+      let value = "false";
+      document.querySelectorAll(".profile-card").forEach((card) => {
+        const name = card.querySelector(".profile-name").value.trim();
+        if (name === selectedName) {
+          value = card.querySelector(".profile-pass_through").value || "false";
+        }
+      });
+      return value;
+    }
+
+    function applyModeLocks() {
+      const passValue = getSelectedPassThroughValue();
+      const locked = passValue !== "false";
+      const reason = `Inactive for pass_through=${passValue}. This option currently only works in Off (False).`;
+
+      setLockedState("ENABLE_SMART_AMNESIA", locked, reason);
+      setLockedState("CHAT_HISTORY_LIMIT", locked, reason);
+      setLockedState("ENABLE_PROMPT_TRIMMING", locked, reason);
+      setLockedState("TRIM_SKILLS", locked, reason);
+      setLockedState("ENABLE_ATTENTION_FORCER", locked, reason);
+      setLockedState("ATTENTION_FORCER_TEXT", locked, reason);
+      setLockedState("ENABLE_EMERGENCY_RESCUE", locked, reason);
+      setLockedState("ENABLE_INPUT_RESCUE", false, "");
     }
 
     function gatherConfig() {
@@ -1125,6 +1169,7 @@ def proxy():
 
     byId("addProfile").addEventListener("click", () => addProfileCard("", {}));
     byId("addRescue").addEventListener("click", () => addRescueCard({ keywords: [], command: "" }));
+    selectedProfileSelect.addEventListener("change", () => applyModeLocks());
     byId("reloadBtn").addEventListener("click", async () => {
       try {
         if (emptyOnReload.checked) await resetLogs();
@@ -1372,6 +1417,34 @@ setInterval(loadLogs, 1000);
                 print(f"{original_messages[-1]['content']}")
                 print("-" * 40)
 
+        # --- INPUT RESCUE (SHORT-CIRCUITING) ---
+        # INPUT_RESCUE is an explicit user-controlled shortcut. If it is enabled,
+        # it should behave consistently across all modes, including FULL and
+        # COMPAT pass-through. This keeps the feature predictable: pass-through
+        # mode still defines how normal LLM traffic is handled, while INPUT_RESCUE
+        # remains an intentional pre-LLM shortcut for known commands.
+        if ENABLE_INPUT_RESCUE and original_messages:
+            last_msg = original_messages[-1]
+            if last_msg.get('role') == 'user':
+                last_user_msg = last_msg.get('content', '')
+                last_user_msg_lower = last_user_msg.lower()
+                is_internal_summary_prompt = (
+                    'reply with only the slug' in last_user_msg_lower and
+                    'conversation summary:' in last_user_msg_lower
+                )
+                is_session_start_prompt = 'a new session was started via /new or /reset.' in last_user_msg_lower
+
+                if not is_internal_summary_prompt and not is_session_start_prompt:
+                    for rescue in EMERGENCY_RESCUES:
+                        if all(kw.lower() in last_user_msg_lower for kw in rescue["keywords"]):
+                            if DEBUG_MODE:
+                                print(f"[DEBUG] INPUT-RESCUE TRIGGERED: Short-circuiting message to {rescue['command']}")
+                            return build_short_circuit_response(
+                                requested_model,
+                                "exec",
+                                {"command": rescue["command"]}
+                            )
+
         # --- FULL PASS-THROUGH MODE ---
         # Truly transparent: forward raw request body to LLM, stream response back unchanged.
         # Only logging is active. No format translation, no injection, no manipulation.
@@ -1383,6 +1456,16 @@ setInterval(loadLogs, 1000);
             passthrough_data.pop('tool_choice', None)
             passthrough_data.pop('options', None)
             passthrough_data.pop('parallel_tool_calls', None)
+
+            for msg in passthrough_data.get('messages', []):
+                if msg.get('role') == 'tool' and isinstance(msg.get('content'), dict):
+                    msg['content'] = json.dumps(msg['content'])
+                if msg.get('role') == 'assistant' and 'tool_calls' in msg:
+                    for tc in msg.get('tool_calls', []):
+                        if isinstance(tc, dict) and 'function' in tc:
+                            args = tc['function'].get('arguments')
+                            if isinstance(args, dict):
+                                tc['function']['arguments'] = json.dumps(args)
 
             if DEBUG_MODE:
                 print(f"[DEBUG] FULL_PASS_THROUGH_MODE active — forwarding raw request.")
@@ -1573,24 +1656,6 @@ setInterval(loadLogs, 1000);
             print(f"[DEBUG] Finished in {time.time() - start_time:.2f}s | COMPAT_PASS_THROUGH")
             return Response(full_passthrough_stream(), content_type='application/x-ndjson')
        
-        # --- INPUT RESCUE (SHORT-CIRCUITING) ---
-        # This remains limited to the proxy-manipulation mode. FULL_PASS_THROUGH
-        # must stay transparent, and COMPAT_PASS_THROUGH must stay limited to
-        # compatibility cleanup rather than local command injection.
-        if not PASS_THROUGH_MODE and not COMPAT_PASS_THROUGH_MODE and original_messages:
-            last_msg = original_messages[-1]
-            if last_msg.get('role') == 'user':
-                last_user_msg = last_msg.get('content', '').lower()
-                for rescue in EMERGENCY_RESCUES:
-                    if all(kw.lower() in last_user_msg for kw in rescue["keywords"]):
-                        if DEBUG_MODE:
-                            print(f"[DEBUG] INPUT-RESCUE TRIGGERED: Short-circuiting message to {rescue['command']}")
-                        return build_short_circuit_response(
-                            requested_model,
-                            "exec",
-                            {"command": rescue["command"]}
-                        )
-
         # Loop breaker for Gateway errors - Bypass if in pass-through mode
         if not PASS_THROUGH_MODE and not COMPAT_PASS_THROUGH_MODE and original_messages and original_messages[-1].get('role') == 'tool':
             content_str = str(original_messages[-1].get('content', ''))
@@ -1947,7 +2012,7 @@ if __name__ == '__main__':
         kill_other_instances()
 
     print(f"==========================================")
-    print(f"ClawCut Universal Proxy (V4.0.2)")
+    print(f"ClawCut Universal Proxy (V4.0.4)")
     _profile_target = cfg.get('base_url', f"{cfg.get('ip', '?')}:{cfg.get('port', '?')}")
     print(f"PROFILE SELECTED: {SELECTED_PROFILE.upper()} ({_profile_target})")
     print(f"MODEL USED: {cfg['model_name']}")
