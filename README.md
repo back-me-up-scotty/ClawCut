@@ -154,7 +154,7 @@ Logs: openclaw logs --follow) and fails before the proxy is ever involved — re
 
 You can edit and configure ClawCut either directly via the `clawcut.py` file or simply through the web dashboard. To do this, start ClawCut 
 from the console (See -> "STARTING CLAWCUT") and then point your browser to `http://127.0.0.1:5000` or, if ClawCut is running on a different host, 
-`http://IP-Adresse:5000`. Profiles support both local servers and cloud APIs. 
+`http://IP-Address:5000`. Profiles support both local servers and cloud APIs. 
 
 ```python
 PROFILES = {
