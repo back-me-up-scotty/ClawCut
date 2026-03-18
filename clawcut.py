@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-ClawCut - Universal LLM Bridge & Proxy (BETA) - v. 4.10.8
+ClawCut - Universal LLM Bridge & Proxy (BETA) - v. 4.10.16
 -------------------------------------------------------------------------------
 LICENSE: ClawCut Personal & Non-Commercial License
 Copyright (c) 2026 Niels Gerhardt
@@ -122,7 +122,8 @@ PROFILES = {
     # False: Full intervention - Trimming, Smart Amnesia, Attention Forcer, Rescues — all active. Best for small local models (7B–8B).
     # "small": Format translation - No content manipulation. Only translates between OpenAI and Ollama formats. Best for powerful local models (14B+).
     # "compat":	Light passthrough - For finicky cloud endpoints that are nominally OpenAI-compatible but fail due to tool history, schemas, or specific fields.
-    # "full": Cloud passthrough -	Raw forward to cloud API with stream translation. Strips Ollama-specific fields (options, role: "tool" messages). Best for cloud models.
+    # "full": Cloud passthrough - Raw forward to cloud API with stream translation plus proxy-side cleanup/recovery. Best for cloud models.
+    # "transparent" - Transparent passthrough - No prompt/content/tool manipulation. Only model override + stream protocol translation remain.
 
     "LLM1": {
         "ip": "192.168.0.xxx", # No api_key, no base_url → local, uses http://ip:port/v1/chat/completions
@@ -210,8 +211,9 @@ if 'headers' in cfg:
 # Derive pass-through mode from profile.
 # False      → full proxy intervention (injection, amnesia, trimming, rescue)
 # "small"    → existing PASS_THROUGH_MODE: format translation only, no manipulation
-# "full"     → raw transparent forward, only logging is active
+# "full"     → pass-through with proxy-side cleanup/recovery
 # "compat"   → pass-through with compatibility sanitization for strict cloud endpoints
+# "transparent" → raw pass-through with no prompt/content/tool manipulation
 _pass_through_cfg = cfg.get('pass_through', False)
 PASS_THROUGH_MODE = (_pass_through_cfg == "small")
 FULL_PASS_THROUGH_MODE = (_pass_through_cfg == "full")
@@ -262,7 +264,7 @@ FORCE_AUTO_DELIVERY = False
 # Cron jobs lack a native chat interface, so OpenClaw's native routing won't show the text anywhere.
 FORCE_CRON_DELIVERY = False
 AUTO_DELIVERY_CHANNEL = "whatsapp"  
-AUTO_DELIVERY_TARGET = "+491231456789" 
+AUTO_DELIVERY_TARGET = "+49123456789" 
 
 
 # ==========================================
@@ -279,7 +281,7 @@ AUTO_DELIVERY_TARGET = "+491231456789"
 EXPECTED_SCRIPT_BASE_PATH = "/home/user/"
 
 # Default message sent to the user when an audio file is delivered
-AUDIO_DELIVERY_MESSAGE = "Here is your audio"
+AUDIO_DELIVERY_MESSAGE = "Here is your audio."
 
 # 1. System Prompt Trimming (Cognitive Overload Protection)
 # If True, the proxy aggressively strips out the skills listed in TRIM_SKILLS before sending 
@@ -459,7 +461,7 @@ def extract_hallucinated_tools(text):
                             r'((?:<\|tool_calls_section_begin\|>\s*)?(?:<\|tool_call_begin\|>\s*)?functions\.([a-zA-Z_][a-zA-Z0-9_]*)\s*(?::\d+)?\s*(?:<\|tool_call_argument_begin\|>\s*)?)$',
                             prefix_slice
                         )
-                        if isinstance(obj, dict) and "name" in obj:
+                        if isinstance(obj, dict) and "name" in obj and "arguments" in obj:
                             jsons.append((obj, start, i+1))
                         elif isinstance(obj, dict) and prefix_match:
                             prefix_text = prefix_match.group(1)
@@ -882,7 +884,7 @@ def proxy():
           <label for="SELECTED_PROFILE">SELECTED_PROFILE</label>
           <select id="SELECTED_PROFILE"></select>
         </div>
-        <div class="hint">Profilwechsel wird erst nach Restart aktiv.</div>
+        <div class="hint">Profile changes take effect after restart.</div>
       </section>
 
       <section class="card">
@@ -1026,6 +1028,7 @@ def proxy():
               <option value="small">Small</option>
               <option value="compat">Compat</option>
               <option value="full">Full</option>
+              <option value="transparent">Transparent</option>
             </select>
           </div>
           <div class="field" style="grid-column: 1 / -1;"><label>headers (JSON)</label><textarea class="profile-headers">${data.headers ? JSON.stringify(data.headers, null, 2) : ""}</textarea></div>
@@ -1036,6 +1039,7 @@ def proxy():
       if (pt === "small") passSelect.value = "small";
       else if (pt === "compat") passSelect.value = "compat";
       else if (pt === "full") passSelect.value = "full";
+      else if (pt === "transparent") passSelect.value = "transparent";
       else passSelect.value = "false";
       passSelect.addEventListener("change", () => applyModeLocks());
       card.querySelector(".profile-name").addEventListener("input", () => applyModeLocks());
@@ -1154,8 +1158,10 @@ def proxy():
       const passValue = getSelectedPassThroughValue();
       const locked = passValue !== "false";
       const reason = `Inactive for pass_through=${passValue}. This option currently only works in Off (False).`;
-      const promptTrimmingLocked = passValue === "small";
+      const transparentLocked = passValue === "transparent";
+      const promptTrimmingLocked = passValue === "small" || transparentLocked;
       const promptTrimmingReason = `Inactive for pass_through=${passValue}. This option currently works in Off (False), Full, and Compat.`;
+      const transparentReason = `Inactive for pass_through=${passValue}. Transparent mode disables proxy-side manipulation.`;
 
       setLockedState("ENABLE_SMART_AMNESIA", locked, reason);
       setLockedState("CHAT_HISTORY_LIMIT", locked, reason);
@@ -1164,7 +1170,15 @@ def proxy():
       setLockedState("ENABLE_ATTENTION_FORCER", locked, reason);
       setLockedState("ATTENTION_FORCER_TEXT", locked, reason);
       setLockedState("ENABLE_EMERGENCY_RESCUE", locked, reason);
-      setLockedState("ENABLE_INPUT_RESCUE", false, "");
+      setLockedState("FORCE_AUTO_DELIVERY", transparentLocked, transparentReason);
+      setLockedState("FORCE_CRON_DELIVERY", transparentLocked, transparentReason);
+      setLockedState("ENABLE_INPUT_RESCUE", transparentLocked, transparentReason);
+      setLockedState("EXPECTED_SCRIPT_BASE_PATH", transparentLocked, transparentReason);
+      setLockedState("addRescue", transparentLocked, transparentReason);
+      document.querySelectorAll(".rescue-keywords, .rescue-command, .remove-rescue").forEach((el) => {
+        el.disabled = transparentLocked;
+        el.title = transparentLocked ? transparentReason : "";
+      });
     }
 
     function gatherConfig() {
@@ -1507,9 +1521,130 @@ setInterval(loadLogs, 1000);
                                 {"command": rescue["command"]}
                             )
 
+        # --- TRANSPARENT PASS-THROUGH MODE ---
+        # Raw forward with no prompt/content/tool manipulation.
+        # Only the model override and Ollama-compatible stream wrapper remain.
+        if _pass_through_cfg == "transparent":
+            passthrough_data = copy.deepcopy(ollama_data)
+            passthrough_data['model'] = LLM_MODEL_IDENTIFIER
+
+            if DEBUG_MODE:
+                print(f"[DEBUG] TRANSPARENT_PASS_THROUGH_MODE active — forwarding request without proxy manipulation.")
+                print(json.dumps(passthrough_data, indent=2, ensure_ascii=False))
+                print(f"[DEBUG] {'-'*60}")
+            try:
+                raw_req = requests.post(LLM_SERVER_URL, json=passthrough_data, headers=LLM_REQUEST_HEADERS, stream=True, timeout=180)
+            except requests.exceptions.Timeout as e:
+                print(f"\n[ERROR] Upstream timeout: {e}")
+                return json.dumps({"error": "LLM Server Timeout", "details": str(e), "server": LLM_SERVER_URL}), 504
+            except requests.exceptions.RequestException as e:
+                print(f"\n[ERROR] Upstream request failed: {e}")
+                return json.dumps({"error": "LLM Server Request Failed", "details": str(e), "server": LLM_SERVER_URL}), 502
+            if raw_req.status_code != 200:
+                response_text = raw_req.text
+                response_text_lower = response_text.lower()
+                if raw_req.status_code == 400 and (
+                    "validation errors for validatoriterator" in response_text_lower or
+                    "chatcompletionmessagefunctiontoolcallparam" in response_text_lower or
+                    ("tool_calls" in response_text_lower and "arguments" in response_text_lower)
+                ):
+                    print("[ERROR] TRANSPARENT_PASS_THROUGH: upstream rejected the raw request format. Some cloud providers/models do not accept raw tool/history payloads in transparent mode. This is a backend compatibility issue. Try pass_through='full' or 'compat'.")
+                    return json.dumps({
+                        "error": f"LLM Server Error {raw_req.status_code}",
+                        "details": response_text,
+                        "hint": "Transparent mode forwarded the raw request unchanged. Some cloud providers or models reject raw tool/history formats. This is a backend compatibility issue, not a proxy bug. Try pass_through='full' or 'compat'."
+                    }), 502
+                return json.dumps({"error": f"LLM Server Error {raw_req.status_code}", "details": response_text}), 502
+            def full_passthrough_stream():
+                merged_tools = {}
+                full_content = ""
+                token_count = 0
+
+                for chunk in raw_req.iter_lines():
+                    if not chunk:
+                        continue
+                    line = chunk.decode('utf-8').strip()
+                    if DEBUG_MODE:
+                        print(f"[TRANSPARENT-PT] {line}")
+                    if not line.startswith("data: "):
+                        continue
+                    data_str = line[6:]
+                    if data_str == "[DONE]":
+                        break
+                    try:
+                        data = json.loads(data_str)
+                        choices = data.get("choices", [])
+                        if not choices:
+                            continue
+                        delta = choices[0].get("delta", {})
+                        if delta.get("content"):
+                            full_content += delta["content"]
+                            token_count += 1
+                        if "tool_calls" in delta:
+                            for tc in delta["tool_calls"]:
+                                idx = tc.get("index", 0)
+                                if idx not in merged_tools:
+                                    merged_tools[idx] = {"name": "", "arguments": ""}
+                                if "function" in tc:
+                                    if tc["function"].get("name"):
+                                        merged_tools[idx]["name"] += tc["function"]["name"]
+                                    if tc["function"].get("arguments"):
+                                        merged_tools[idx]["arguments"] += tc["function"]["arguments"]
+                    except Exception:
+                        continue
+
+                try:
+                    final_tool_calls = []
+                    for idx, func in merged_tools.items():
+                        if func["name"]:
+                            args = func["arguments"]
+                            try:
+                                args = json.loads(args) if isinstance(args, str) else args
+                            except Exception:
+                                pass
+                            final_tool_calls.append({"function": {"name": func["name"], "arguments": args}})
+
+                    message_obj = {"role": "assistant", "content": full_content}
+                    if final_tool_calls:
+                        message_obj["tool_calls"] = final_tool_calls
+
+                    duration = time.time() - start_time
+                    print(f"[DEBUG] {'-'*60}")
+                    print(f"[DEBUG] Finished in {duration:.2f}s | Tokens: {token_count} | Tokens/s: {(token_count / duration if duration > 0 else 0):.2f}")
+                    print(f"[DEBUG] Chars: {len(full_content)} | Tool Calls: {len(final_tool_calls)} | Mode: TRANSPARENT_PASS_THROUGH")
+                    if final_tool_calls:
+                        for tc in final_tool_calls:
+                            print(f"[TOOL_CALL DETECTED: {tc['function']['name']}]")
+                            try: print(json.dumps(tc['function']['arguments'], indent=2, ensure_ascii=False))
+                            except: print(tc['function']['arguments'])
+                    if full_content and full_content != "NO_REPLY":
+                        print(f"[TEXT]: {full_content}")
+                    elif not final_tool_calls:
+                        print(f"[WARNING]: Model is Silent (NO_REPLY).")
+
+                    yield json.dumps({
+                        "model": requested_model,
+                        "created_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+                        "message": message_obj,
+                        "done": False
+                    }).encode('utf-8') + b'\n'
+
+                except Exception as e:
+                    print(f"[TRANSPARENT-PT ERROR] {e}")
+
+                finally:
+                    yield json.dumps({
+                        "model": requested_model,
+                        "created_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+                        "message": {"role": "assistant", "content": ""},
+                        "done": True
+                    }).encode('utf-8') + b'\n'
+
+            return Response(full_passthrough_stream(), content_type='application/x-ndjson')
+
         # --- FULL PASS-THROUGH MODE ---
-        # Truly transparent: forward raw request body to LLM, stream response back unchanged.
-        # Only logging is active. No format translation, no injection, no manipulation.
+        # Pass-through forward to the LLM with proxy-side cleanup/recovery still enabled.
+        # This keeps the cloud-oriented compatibility behavior intact.
         # Exception: model name is always overridden from the active profile, since openclaw.json
         # always sends the local placeholder model name regardless of which profile is active.
         if FULL_PASS_THROUGH_MODE:
@@ -1568,12 +1703,20 @@ setInterval(loadLogs, 1000);
                     print("[DEBUG] FULL_PASS_THROUGH: removed prior tool protocol for NVIDIA compatibility.")
                 print(json.dumps(passthrough_data, indent=2, ensure_ascii=False))
                 print(f"[DEBUG] {'-'*60}")
-            raw_req = requests.post(LLM_SERVER_URL, json=passthrough_data, headers=LLM_REQUEST_HEADERS, stream=True, timeout=600)
+            try:
+                raw_req = requests.post(LLM_SERVER_URL, json=passthrough_data, headers=LLM_REQUEST_HEADERS, stream=True, timeout=180)
+            except requests.exceptions.Timeout as e:
+                print(f"\n[ERROR] Upstream timeout: {e}")
+                return json.dumps({"error": "LLM Server Timeout", "details": str(e), "server": LLM_SERVER_URL}), 504
+            except requests.exceptions.RequestException as e:
+                print(f"\n[ERROR] Upstream request failed: {e}")
+                return json.dumps({"error": "LLM Server Request Failed", "details": str(e), "server": LLM_SERVER_URL}), 502
             if raw_req.status_code != 200:
                 return json.dumps({"error": f"LLM Server Error {raw_req.status_code}", "details": raw_req.text}), 502
             def full_passthrough_stream():
                 merged_tools = {}
                 full_content = ""
+                token_count = 0
 
                 for chunk in raw_req.iter_lines():
                     if not chunk:
@@ -1594,6 +1737,7 @@ setInterval(loadLogs, 1000);
                         delta = choices[0].get("delta", {})
                         if delta.get("content"):
                             full_content += delta["content"]
+                            token_count += 1
                         if "tool_calls" in delta:
                             for tc in delta["tool_calls"]:
                                 idx = tc.get("index", 0)
@@ -1630,6 +1774,8 @@ setInterval(loadLogs, 1000);
                         extracted = extract_hallucinated_tools(full_content)
                         if extracted:
                             for obj, start, end in reversed(extracted):
+                                if "arguments" not in obj:
+                                    continue
                                 args_obj = obj["arguments"]
                                 if isinstance(args_obj, dict) and "file" in args_obj and "file_path" not in args_obj:
                                     if obj["name"] in ("read", "write", "edit"):
@@ -1688,6 +1834,7 @@ setInterval(loadLogs, 1000);
                                             retry_delta = retry_choices[0].get("delta", {})
                                             if retry_delta.get("content"):
                                                 retry_full_content += retry_delta["content"]
+                                                token_count += 1
                                             if "tool_calls" in retry_delta:
                                                 for retry_tc in retry_delta["tool_calls"]:
                                                     retry_idx = retry_tc.get("index", 0)
@@ -1723,6 +1870,8 @@ setInterval(loadLogs, 1000);
                                         retry_extracted = extract_hallucinated_tools(retry_full_content)
                                         if retry_extracted:
                                             for retry_obj, retry_start, retry_end in reversed(retry_extracted):
+                                                if "arguments" not in retry_obj:
+                                                    continue
                                                 retry_args_obj = retry_obj["arguments"]
                                                 if isinstance(retry_args_obj, dict) and "file" in retry_args_obj and "file_path" not in retry_args_obj:
                                                     if retry_obj["name"] in ("read", "write", "edit"):
@@ -1745,11 +1894,28 @@ setInterval(loadLogs, 1000);
                             except Exception:
                                 pass
                         if tool_action_requested and not plain_failure_text and not final_tool_calls:
-                            full_content = "Die angeforderte Tool-Aktion wurde nicht ausgefuehrt. Das Modell hat nur Text statt eines echten Tool-Calls zurueckgegeben."
+                            if full_content:
+                                full_content = full_content + "\n\n[NOTICE: The requested tool action was not executed. The model returned plain text instead of a real tool call.]"
+                            else:
+                                full_content = "The requested tool action was not executed. The model returned plain text instead of a real tool call."
 
                     message_obj = {"role": "assistant", "content": full_content}
                     if final_tool_calls:
                         message_obj["tool_calls"] = final_tool_calls
+
+                    duration = time.time() - start_time
+                    print(f"[DEBUG] {'-'*60}")
+                    print(f"[DEBUG] Finished in {duration:.2f}s | Tokens: {token_count} | Tokens/s: {(token_count / duration if duration > 0 else 0):.2f}")
+                    print(f"[DEBUG] Chars: {len(full_content)} | Tool Calls: {len(final_tool_calls)} | Mode: FULL_PASS_THROUGH")
+                    if final_tool_calls:
+                        for tc in final_tool_calls:
+                            print(f"[TOOL_CALL DETECTED: {tc['function']['name']}]")
+                            try: print(json.dumps(tc['function']['arguments'], indent=2, ensure_ascii=False))
+                            except: print(tc['function']['arguments'])
+                    if full_content and full_content != "NO_REPLY":
+                        print(f"[TEXT]: {full_content}")
+                    elif not final_tool_calls:
+                        print(f"[WARNING]: Model is Silent (NO_REPLY).")
 
                     yield json.dumps({
                         "model": requested_model,
@@ -1769,7 +1935,6 @@ setInterval(loadLogs, 1000);
                         "done": True
                     }).encode('utf-8') + b'\n'
 
-            print(f"[DEBUG] Finished in {time.time() - start_time:.2f}s | FULL_PASS_THROUGH")
             return Response(full_passthrough_stream(), content_type='application/x-ndjson')
 
         # --- COMPAT PASS-THROUGH MODE ---
@@ -1825,12 +1990,20 @@ setInterval(loadLogs, 1000);
                     print("[DEBUG] COMPAT_PASS_THROUGH: removed prior tool protocol from history for cloud compatibility.")
                 print(json.dumps(passthrough_data, indent=2, ensure_ascii=False))
                 print(f"[DEBUG] {'-'*60}")
-            raw_req = requests.post(LLM_SERVER_URL, json=passthrough_data, headers=LLM_REQUEST_HEADERS, stream=True, timeout=600)
+            try:
+                raw_req = requests.post(LLM_SERVER_URL, json=passthrough_data, headers=LLM_REQUEST_HEADERS, stream=True, timeout=180)
+            except requests.exceptions.Timeout as e:
+                print(f"\n[ERROR] Upstream timeout: {e}")
+                return json.dumps({"error": "LLM Server Timeout", "details": str(e), "server": LLM_SERVER_URL}), 504
+            except requests.exceptions.RequestException as e:
+                print(f"\n[ERROR] Upstream request failed: {e}")
+                return json.dumps({"error": "LLM Server Request Failed", "details": str(e), "server": LLM_SERVER_URL}), 502
             if raw_req.status_code != 200:
                 return json.dumps({"error": f"LLM Server Error {raw_req.status_code}", "details": raw_req.text}), 502
             def full_passthrough_stream():
                 merged_tools = {}
                 full_content = ""
+                token_count = 0
 
                 for chunk in raw_req.iter_lines():
                     if not chunk:
@@ -1851,6 +2024,7 @@ setInterval(loadLogs, 1000);
                         delta = choices[0].get("delta", {})
                         if delta.get("content"):
                             full_content += delta["content"]
+                            token_count += 1
                         if "tool_calls" in delta:
                             for tc in delta["tool_calls"]:
                                 idx = tc.get("index", 0)
@@ -1887,6 +2061,8 @@ setInterval(loadLogs, 1000);
                         extracted = extract_hallucinated_tools(full_content)
                         if extracted:
                             for obj, start, end in reversed(extracted):
+                                if "arguments" not in obj:
+                                    continue
                                 args_obj = obj["arguments"]
                                 if isinstance(args_obj, dict) and "file" in args_obj and "file_path" not in args_obj:
                                     if obj["name"] in ("read", "write", "edit"):
@@ -1945,6 +2121,7 @@ setInterval(loadLogs, 1000);
                                             retry_delta = retry_choices[0].get("delta", {})
                                             if retry_delta.get("content"):
                                                 retry_full_content += retry_delta["content"]
+                                                token_count += 1
                                             if "tool_calls" in retry_delta:
                                                 for retry_tc in retry_delta["tool_calls"]:
                                                     retry_idx = retry_tc.get("index", 0)
@@ -1980,6 +2157,8 @@ setInterval(loadLogs, 1000);
                                         retry_extracted = extract_hallucinated_tools(retry_full_content)
                                         if retry_extracted:
                                             for retry_obj, retry_start, retry_end in reversed(retry_extracted):
+                                                if "arguments" not in retry_obj:
+                                                    continue
                                                 retry_args_obj = retry_obj["arguments"]
                                                 if isinstance(retry_args_obj, dict) and "file" in retry_args_obj and "file_path" not in retry_args_obj:
                                                     if retry_obj["name"] in ("read", "write", "edit"):
@@ -2002,11 +2181,28 @@ setInterval(loadLogs, 1000);
                             except Exception:
                                 pass
                         if tool_action_requested and not plain_failure_text and not final_tool_calls:
-                            full_content = "Die angeforderte Tool-Aktion wurde nicht ausgefuehrt. Das Modell hat nur Text statt eines echten Tool-Calls zurueckgegeben."
+                            if full_content:
+                                full_content = full_content + "\n\n[NOTICE: The requested tool action was not executed. The model returned plain text instead of a real tool call.]"
+                            else:
+                                full_content = "The requested tool action was not executed. The model returned plain text instead of a real tool call."
 
                     message_obj = {"role": "assistant", "content": full_content}
                     if final_tool_calls:
                         message_obj["tool_calls"] = final_tool_calls
+
+                    duration = time.time() - start_time
+                    print(f"[DEBUG] {'-'*60}")
+                    print(f"[DEBUG] Finished in {duration:.2f}s | Tokens: {token_count} | Tokens/s: {(token_count / duration if duration > 0 else 0):.2f}")
+                    print(f"[DEBUG] Chars: {len(full_content)} | Tool Calls: {len(final_tool_calls)} | Mode: COMPAT_PASS_THROUGH")
+                    if final_tool_calls:
+                        for tc in final_tool_calls:
+                            print(f"[TOOL_CALL DETECTED: {tc['function']['name']}]")
+                            try: print(json.dumps(tc['function']['arguments'], indent=2, ensure_ascii=False))
+                            except: print(tc['function']['arguments'])
+                    if full_content and full_content != "NO_REPLY":
+                        print(f"[TEXT]: {full_content}")
+                    elif not final_tool_calls:
+                        print(f"[WARNING]: Model is Silent (NO_REPLY).")
 
                     yield json.dumps({
                         "model": requested_model,
@@ -2026,7 +2222,6 @@ setInterval(loadLogs, 1000);
                         "done": True
                     }).encode('utf-8') + b'\n'
 
-            print(f"[DEBUG] Finished in {time.time() - start_time:.2f}s | COMPAT_PASS_THROUGH")
             return Response(full_passthrough_stream(), content_type='application/x-ndjson')
        
         # Loop breaker for Gateway errors - Bypass if in pass-through mode
@@ -2179,7 +2374,14 @@ setInterval(loadLogs, 1000);
             print(json.dumps(openai_payload, indent=2, ensure_ascii=False))
             print(f"[DEBUG] {'-'*60}")
 
-        req = requests.post(LLM_SERVER_URL, json=openai_payload, headers=LLM_REQUEST_HEADERS, stream=True, timeout=600)
+        try:
+            req = requests.post(LLM_SERVER_URL, json=openai_payload, headers=LLM_REQUEST_HEADERS, stream=True, timeout=180)
+        except requests.exceptions.Timeout as e:
+            print(f"\n[ERROR] Upstream timeout: {e}")
+            return json.dumps({"error": "LLM Server Timeout", "details": str(e), "server": LLM_SERVER_URL}), 504
+        except requests.exceptions.RequestException as e:
+            print(f"\n[ERROR] Upstream request failed: {e}")
+            return json.dumps({"error": "LLM Server Request Failed", "details": str(e), "server": LLM_SERVER_URL}), 502
         if req.status_code != 200:
             return json.dumps({"error": f"LLM Server Error {req.status_code}", "details": req.text}), 502
 
@@ -2236,6 +2438,8 @@ setInterval(loadLogs, 1000);
                     extracted = extract_hallucinated_tools(full_content)
                     if extracted:
                         for obj, start, end in reversed(extracted):
+                            if "arguments" not in obj:
+                                continue
                             args_str = obj["arguments"] if isinstance(obj["arguments"], str) else json.dumps(obj["arguments"])
                             final_tool_calls.append({"function": {"name": obj["name"], "arguments": args_str}})
                             full_content = full_content[:start] + full_content[end:]
@@ -2352,7 +2556,9 @@ setInterval(loadLogs, 1000);
                         if DEBUG_MODE:
                             print("[SYSTEM] Loop-Breaker active: 'message' tool was already used. Suppressing Auto-Delivery.")
 
-            print(f"[DEBUG] Finished in {duration:.2f}s | Tokens: {token_count}")
+            print(f"[DEBUG] {'-'*60}")
+            print(f"[DEBUG] Finished in {duration:.2f}s | Tokens: {token_count} | Tokens/s: {(token_count / duration if duration > 0 else 0):.2f}")
+            print(f"[DEBUG] Chars: {len(full_content)} | Tool Calls: {len(final_tool_calls)} | Mode: {'PASS_THROUGH' if PASS_THROUGH_MODE else 'OFF'}")
             
             if final_tool_calls:
                 for tc in final_tool_calls:
@@ -2397,14 +2603,14 @@ if __name__ == '__main__':
         kill_other_instances()
 
     print(f"==========================================")
-    print(f"ClawCut Universal Proxy (V4.10.8)")
+    print(f"ClawCut Universal Proxy (V4.10.16)")
     _profile_target = cfg.get('base_url', f"{cfg.get('ip', '?')}:{cfg.get('port', '?')}")
     print(f"PROFILE SELECTED: {SELECTED_PROFILE.upper()} ({_profile_target})")
     print(f"MODEL USED: {cfg['model_name']}")
     print(f"PASS_THROUGH_MODE = {PASS_THROUGH_MODE}")
-    _pt_label = "FULL" if FULL_PASS_THROUGH_MODE else ("COMPAT" if COMPAT_PASS_THROUGH_MODE else ("SMALL" if PASS_THROUGH_MODE else "OFF"))
+    _pt_label = "TRANSPARENT" if _pass_through_cfg == "transparent" else ("FULL" if FULL_PASS_THROUGH_MODE else ("COMPAT" if COMPAT_PASS_THROUGH_MODE else ("SMALL" if PASS_THROUGH_MODE else "OFF")))
     print(f"PASS_THROUGH_MODE = {_pt_label}")
-    if not PASS_THROUGH_MODE and not FULL_PASS_THROUGH_MODE and not COMPAT_PASS_THROUGH_MODE:
+    if not PASS_THROUGH_MODE and not FULL_PASS_THROUGH_MODE and not COMPAT_PASS_THROUGH_MODE and _pass_through_cfg != "transparent":
         print(f"SMART_AMNESIA = {ENABLE_SMART_AMNESIA}")
         print(f"AUTO_DELIVERY = {FORCE_AUTO_DELIVERY} (Cron: {FORCE_CRON_DELIVERY}) -> {AUTO_DELIVERY_CHANNEL}:{AUTO_DELIVERY_TARGET}")
     if WRITE_TO_LOGFILE: print(f"LOGGING TO: {PATH_TO_LOGFILE} (Max Size: {DELETE_LOG_SIZE})")
