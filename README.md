@@ -1,4 +1,4 @@
-# ClawCut Universal LLM Bridge & Proxy 4.10.8
+# ClawCut Universal LLM Bridge & Proxy 4.10.16
 
 ClawCut is a proxy that sits between OpenClaw and any LLM — local or cloud. It solves the "Cognitive Overload" problem for small models, cuts JSON clutter, injects commands, translates between API formats, and lets you switch between completely different LLM (local Ollama, local MLX, NVIDIA cloud, OpenAI, etc.) by simply restarting with a different profile flag. Your `openclaw.json` never needs to change.
 
@@ -205,7 +205,7 @@ PROFILES = {
 
 ## PASS-THROUGH MODES
 
-ClawCut supports four `pass_through` values. Despite the shared naming, these modes do **not** all behave the same way. Some are true pass-through styles, while others actively manipulate requests and responses. 
+ClawCut supports five `pass_through` values. Despite the shared naming, these modes do **not** all behave the same way. Some are true pass-through styles, while others actively manipulate requests and responses. 
 
 Each model behaves differently within the same mode. It’s best to test your way down from “Full” or in the reverse order and see which behavior leads to the result you want—that is, achieving a good balance between response time and the quality of the answers. 
 
@@ -216,7 +216,8 @@ For example, while I was able to get Qwen2.5-Coder-7B-Instruct-4bit to run tools
 | `false` | Full proxy intervention | Enables prompt trimming, smart amnesia, attention forcer, input rescue, emergency rescue, loop breaking, tool filtering/augmentation, and output cleanup | Small local models that need strong guidance and stabilization |
 | `"small"` | Format translation only | Keeps the translator pipeline between OpenClaw/Ollama-style input and OpenAI-style upstream requests, but skips the major intervention features | Stronger local models where you still want format bridging without heavy proxy behavior |
 | `"compat"` | Compatibility pass-through | Keeps the pass-through architecture, but sanitizes message history, tool protocol, and tool schemas for stricter cloud endpoints | Cloud providers that are nominally OpenAI-compatible but fail on tool history, schemas, or specific fields |
-| `"full"` | Raw pass-through | Forwards the request upstream with only minimal top-level cleanup and model override; no history cleanup, no tool sanitization, no rescue logic | Providers that already accept the payload as-is and where maximum transparency is desired |
+| `"full"` | Pass-through with recovery | Keeps the pass-through architecture, but still applies proxy-side cleanup and fallback logic such as prompt trimming, tool-call recovery, retry logic, and path normalization where needed | Cloud or local models that mostly work raw, but still benefit from ClawCut recovery logic |
+| `"transparent"` | Transparent pass-through | Forwards the request upstream without prompt/content/tool manipulation; only the selected model override and Ollama-compatible response wrapping remain | Debugging, protocol inspection, and providers/models that already accept the raw payload without cleanup |
 
 ### Detailed Behavior
 
@@ -257,24 +258,46 @@ It keeps the pass-through architecture, but adds a narrow compatibility layer th
 Use this when `"full"` fails because a provider claims OpenAI compatibility but crashes on real-world tool payloads.
 
 #### `"full"`
-This is the most transparent mode.
+This mode still looks like pass-through from the outside, but it is not fully transparent.
 
 It:
 - forwards the incoming request upstream
 - overrides the model to the currently selected profile
-- removes only a few top-level fields such as `options`, `tool_choice`, and `parallel_tool_calls`
-- does **not** clean history
-- does **not** sanitize tools
-- does **not** inject or rescue anything
+- may trim the prompt
+- may clean or reconstruct tool calls
+- may retry locally with stricter tool settings
+- may normalize path-style arguments
+- may add proxy-side notices when a requested tool action did not actually execute
 
-Use this when you want the proxy to stay as close to transparent as possible and the upstream provider is known to tolerate the payload.
+Use this when you want a pass-through-oriented mode, but still need ClawCut to repair or stabilize edge cases.
+
+#### `"transparent"`
+This is the truly transparent mode.
+
+It:
+- forwards the incoming request upstream as-is
+- overrides only the model to the currently selected profile
+- does **not** trim prompts
+- does **not** sanitize tool schemas
+- does **not** clean message history
+- does **not** reconstruct pseudo-tool-calls from plain text
+- does **not** retry or rescue requests
+- does **not** normalize path arguments or append proxy-side notices
+
+Use this when you want to see what the upstream model really does without proxy intervention.
+
+Important caveat:
+- strict cloud backends may reject raw OpenClaw/OpenAI-style tool history in this mode
+- once incompatible `tool_calls` are in the session history, the same session may keep failing until you start a new session or reset it
+- for day-to-day cloud use, `"full"` or `"compat"` is often the better choice
 
 ### Recommendation
 
 - Use `false` for weak or unstable local models.
 - Use `"small"` for stronger local models that still need format translation.
 - Use `"compat"` for strict cloud APIs that break in `"full"`.
-- Use `"full"` when you want maximum transparency and the provider already works with the raw payload.
+- Use `"full"` when you want pass-through behavior with recovery logic still available.
+- Use `"transparent"` when you want a real diagnostic/raw mode and accept that some providers may reject the untouched payload.
 
 ---
 
