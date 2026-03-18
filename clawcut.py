@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-ClawCut - Universal LLM Bridge & Proxy (BETA) - v. 4.0.6
+ClawCut - Universal LLM Bridge & Proxy (BETA) - v. 4.10.8
 -------------------------------------------------------------------------------
 LICENSE: ClawCut Personal & Non-Commercial License
 Copyright (c) 2026 Niels Gerhardt
@@ -93,6 +93,7 @@ import json
 import re
 import sys
 import os
+import ast
 import time
 import logging
 import subprocess
@@ -261,7 +262,7 @@ FORCE_AUTO_DELIVERY = False
 # Cron jobs lack a native chat interface, so OpenClaw's native routing won't show the text anywhere.
 FORCE_CRON_DELIVERY = False
 AUTO_DELIVERY_CHANNEL = "whatsapp"  
-AUTO_DELIVERY_TARGET = "+491123456" 
+AUTO_DELIVERY_TARGET = "+491231456789" 
 
 
 # ==========================================
@@ -308,20 +309,20 @@ ATTENTION_FORCER_TEXT = "\n\n[SYSTEM REMINDER: NEVER respond directly with text 
 # ENABLE_EMERGENCY_RESCUE intervenes after the LLM—it scans the LLM’s text response in `generate()` 
 # and converts recognized keywords into an `exec` call if the model forgot to use the tool.
 
-ENABLE_EMERGENCY_RESCUE = True
-ENABLE_INPUT_RESCUE = False
+ENABLE_EMERGENCY_RESCUE = False
+ENABLE_INPUT_RESCUE = True
 EMERGENCY_RESCUES = [
     {
         "keywords": ["weather", "check"], 
-        "command": 'bash /home/nhg/weather.sh "Frankfurt"'
+        "command": 'bash /home/user/weather.sh "New York"'
     },
     {
         "keywords": ["diesel", "price"], 
-        "command": 'bash /home/nhg/.openclaw/workspace/skills/diesel-price/diesel_price.sh'
+        "command": 'bash /home/user/.openclaw/workspace/skills/diesel-price/diesel_price.sh'
     },
      {
         "keywords": ["backup", "make"], 
-        "command": 'bash /home/nhg/.openclaw/workspace/skills/system_control/run_bmus.sh'
+        "command": 'bash /home/user/.openclaw/workspace/skills/system_control/run_bmus.sh'
     }
 ]# ==========================================
 
@@ -453,9 +454,55 @@ def extract_hallucinated_tools(text):
                 if depth == 0 and start != -1:
                     try:
                         obj = json.loads(text[start:i+1])
+                        prefix_slice = text[max(0, start-240):start]
+                        prefix_match = re.search(
+                            r'((?:<\|tool_calls_section_begin\|>\s*)?(?:<\|tool_call_begin\|>\s*)?functions\.([a-zA-Z_][a-zA-Z0-9_]*)\s*(?::\d+)?\s*(?:<\|tool_call_argument_begin\|>\s*)?)$',
+                            prefix_slice
+                        )
                         if isinstance(obj, dict) and "name" in obj:
                             jsons.append((obj, start, i+1))
+                        elif isinstance(obj, dict) and prefix_match:
+                            prefix_text = prefix_match.group(1)
+                            suffix_slice = text[i+1:i+120]
+                            suffix_match = re.match(r'(\s*(?:<\|tool_call_end\|>\s*)?(?:<\|tool_calls_section_end\|>\s*)?)', suffix_slice)
+                            end_pos = i+1 + (len(suffix_match.group(1)) if suffix_match else 0)
+                            jsons.append((
+                                {"name": prefix_match.group(2), "arguments": obj},
+                                start - len(prefix_text),
+                                end_pos
+                            ))
                     except Exception: pass
+    pseudo_call_re = re.compile(r'(?s)(```[a-zA-Z]*\s*)?((?:read|write|edit|process|exec))\((.*?)\)(\s*```)?')
+    for match in pseudo_call_re.finditer(text):
+        call_name = match.group(2)
+        args_src = match.group(3).strip()
+        if not args_src:
+            continue
+        try:
+            parsed = ast.parse(f"f({args_src})", mode='eval')
+            call = parsed.body
+            if not isinstance(call, ast.Call):
+                continue
+            kwargs = {}
+            for kw in call.keywords:
+                if kw.arg is None:
+                    continue
+                value = kw.value
+                if isinstance(value, ast.Constant):
+                    kwargs[kw.arg] = value.value
+                elif isinstance(value, ast.Name):
+                    kwargs[kw.arg] = value.id
+                else:
+                    kwargs[kw.arg] = ast.literal_eval(value)
+            tool_name = call_name
+            if call_name == "exec" and kwargs.get("action") in ("read", "write", "edit", "process"):
+                tool_name = kwargs.pop("action")
+            if tool_name in ("read", "write", "edit") and "path" in kwargs and "file_path" not in kwargs:
+                kwargs["file_path"] = kwargs["path"]
+            if tool_name != "exec" or "command" in kwargs:
+                jsons.append(({"name": tool_name, "arguments": kwargs}, match.start(), match.end()))
+        except Exception:
+            pass
     return jsons
 
 def build_short_circuit_response(requested_model, tool_name, arguments):
@@ -1107,11 +1154,13 @@ def proxy():
       const passValue = getSelectedPassThroughValue();
       const locked = passValue !== "false";
       const reason = `Inactive for pass_through=${passValue}. This option currently only works in Off (False).`;
+      const promptTrimmingLocked = passValue === "small";
+      const promptTrimmingReason = `Inactive for pass_through=${passValue}. This option currently works in Off (False), Full, and Compat.`;
 
       setLockedState("ENABLE_SMART_AMNESIA", locked, reason);
       setLockedState("CHAT_HISTORY_LIMIT", locked, reason);
-      setLockedState("ENABLE_PROMPT_TRIMMING", locked, reason);
-      setLockedState("TRIM_SKILLS", locked, reason);
+      setLockedState("ENABLE_PROMPT_TRIMMING", promptTrimmingLocked, promptTrimmingReason);
+      setLockedState("TRIM_SKILLS", promptTrimmingLocked, promptTrimmingReason);
       setLockedState("ENABLE_ATTENTION_FORCER", locked, reason);
       setLockedState("ATTENTION_FORCER_TEXT", locked, reason);
       setLockedState("ENABLE_EMERGENCY_RESCUE", locked, reason);
@@ -1470,6 +1519,24 @@ setInterval(loadLogs, 1000);
             passthrough_data.pop('options', None)
             passthrough_data.pop('parallel_tool_calls', None)
 
+            if passthrough_data.get('messages') and passthrough_data['messages'][0].get('role') == 'system':
+                sys_msg = passthrough_data['messages'][0].get('content', '')
+                sys_msg = re.sub(r'## Silent Replies.*?(?:Right: NO_REPLY|NO_REPLY)', '', sys_msg, flags=re.DOTALL)
+                sys_msg = sys_msg.replace("When you have nothing to say, respond with ONLY: NO_REPLY", "")
+                dynamic_pattern = r"(?i)(The current date and time is.*?$|Current Time:.*?$|Date:.*?$)"
+                dynamic_parts = re.findall(dynamic_pattern, sys_msg, flags=re.MULTILINE)
+                if dynamic_parts:
+                    sys_msg = re.sub(dynamic_pattern, "", sys_msg, flags=re.MULTILINE).strip()
+                    if len(passthrough_data['messages']) > 1 and passthrough_data['messages'][-1].get('role') == 'user':
+                        passthrough_data['messages'][-1]['content'] += "\n\n[System-Info: " + " | ".join(dynamic_parts) + "]"
+
+                if ENABLE_PROMPT_TRIMMING and TRIM_SKILLS:
+                    skills_pattern = "|".join(map(re.escape, TRIM_SKILLS))
+                    sys_msg = re.sub(fr'<skill>\s*<name>(?:{skills_pattern})</name>.*?</skill>', '', sys_msg, flags=re.DOTALL)
+                    sys_msg = re.sub(r'\n\s*\n', '\n', sys_msg)
+
+                passthrough_data['messages'][0]['content'] = sys_msg
+
             for msg in passthrough_data.get('messages', []):
                 if msg.get('role') == 'tool' and isinstance(msg.get('content'), dict):
                     msg['content'] = json.dumps(msg['content'])
@@ -1549,7 +1616,136 @@ setInterval(loadLogs, 1000);
                                 args = json.loads(args) if isinstance(args, str) else args
                             except Exception:
                                 args = {}
+                            if isinstance(args, dict) and "file" in args and "file_path" not in args:
+                                if func["name"] in ("read", "write", "edit"):
+                                    args["file_path"] = args["file"]
+                            if isinstance(args, dict):
+                                for key in ("path", "file_path", "file"):
+                                    if key in args and isinstance(args[key], str):
+                                        if EXPECTED_SCRIPT_BASE_PATH.startswith('/') and args[key].startswith(EXPECTED_SCRIPT_BASE_PATH.lstrip('/')):
+                                            args[key] = '/' + args[key]
                             final_tool_calls.append({"function": {"name": func["name"], "arguments": args}})
+
+                    if not final_tool_calls and full_content:
+                        extracted = extract_hallucinated_tools(full_content)
+                        if extracted:
+                            for obj, start, end in reversed(extracted):
+                                args_obj = obj["arguments"]
+                                if isinstance(args_obj, dict) and "file" in args_obj and "file_path" not in args_obj:
+                                    if obj["name"] in ("read", "write", "edit"):
+                                        args_obj = dict(args_obj)
+                                        args_obj["file_path"] = args_obj["file"]
+                                if isinstance(args_obj, dict):
+                                    for key in ("path", "file_path", "file"):
+                                        if key in args_obj and isinstance(args_obj[key], str):
+                                            if EXPECTED_SCRIPT_BASE_PATH.startswith('/') and args_obj[key].startswith(EXPECTED_SCRIPT_BASE_PATH.lstrip('/')):
+                                                args_obj = dict(args_obj)
+                                                args_obj[key] = '/' + args_obj[key]
+                                final_tool_calls.append({"function": {"name": obj["name"], "arguments": args_obj}})
+                                full_content = full_content[:start] + full_content[end:]
+                            final_tool_calls.reverse()
+                    full_content = re.sub(r'<\|tool[^>]*\|>', '', full_content)
+                    full_content = re.sub(r'</?think>', '', full_content).strip()
+                    if not final_tool_calls and full_content and original_messages and original_messages[-1].get('role') == 'user':
+                        last_user_content_lower = original_messages[-1].get('content', '').lower()
+                        matched_rescue = any(
+                            all(kw.lower() in last_user_content_lower for kw in rescue.get("keywords", []))
+                            for rescue in EMERGENCY_RESCUES
+                        )
+                        file_action_requested = (
+                            ("datei" in last_user_content_lower or ".md" in last_user_content_lower or ".txt" in last_user_content_lower) and
+                            any(token in last_user_content_lower for token in ("lies", "lese", "read", "schreib", "schreibe", "write", "edit", "bearbeit", "inhalt", "zeige", "gib mir"))
+                        )
+                        script_action_requested = EXPECTED_SCRIPT_BASE_PATH.lower() in last_user_content_lower
+                        plain_failure_text = re.search(r'(tool result:|fehler|error|failed|konnte nicht|kann nicht|entschuldigung)', full_content, re.IGNORECASE)
+                        tool_action_requested = matched_rescue or file_action_requested or script_action_requested
+                        if tool_action_requested and not plain_failure_text and 'integrate.api.nvidia.com' not in LLM_SERVER_URL:
+                            try:
+                                retry_data = copy.deepcopy(passthrough_data)
+                                retry_data['tool_choice'] = "required"
+                                if DEBUG_MODE:
+                                    print("[DEBUG] FULL_PASS_THROUGH: retrying tool request with tool_choice=required.")
+                                retry_req = requests.post(LLM_SERVER_URL, json=retry_data, headers=LLM_REQUEST_HEADERS, stream=True, timeout=180)
+                                if retry_req.status_code == 200:
+                                    retry_merged_tools = {}
+                                    retry_full_content = ""
+                                    for retry_chunk in retry_req.iter_lines():
+                                        if not retry_chunk:
+                                            continue
+                                        retry_line = retry_chunk.decode('utf-8').strip()
+                                        if DEBUG_MODE:
+                                            print(f"[FULL-PT RETRY] {retry_line}")
+                                        if not retry_line.startswith("data: "):
+                                            continue
+                                        retry_data_str = retry_line[6:]
+                                        if retry_data_str == "[DONE]":
+                                            break
+                                        try:
+                                            retry_obj = json.loads(retry_data_str)
+                                            retry_choices = retry_obj.get("choices", [])
+                                            if not retry_choices:
+                                                continue
+                                            retry_delta = retry_choices[0].get("delta", {})
+                                            if retry_delta.get("content"):
+                                                retry_full_content += retry_delta["content"]
+                                            if "tool_calls" in retry_delta:
+                                                for retry_tc in retry_delta["tool_calls"]:
+                                                    retry_idx = retry_tc.get("index", 0)
+                                                    if retry_idx not in retry_merged_tools:
+                                                        retry_merged_tools[retry_idx] = {"name": "", "arguments": ""}
+                                                    if "function" in retry_tc:
+                                                        if retry_tc["function"].get("name"):
+                                                            retry_merged_tools[retry_idx]["name"] += retry_tc["function"]["name"]
+                                                        if retry_tc["function"].get("arguments"):
+                                                            retry_merged_tools[retry_idx]["arguments"] += retry_tc["function"]["arguments"]
+                                        except Exception:
+                                            continue
+
+                                    retry_tool_calls = []
+                                    for retry_idx, retry_func in retry_merged_tools.items():
+                                        if retry_func["name"]:
+                                            retry_args = retry_func["arguments"]
+                                            try:
+                                                retry_args = json.loads(retry_args) if isinstance(retry_args, str) else retry_args
+                                            except Exception:
+                                                retry_args = {}
+                                            if isinstance(retry_args, dict) and "file" in retry_args and "file_path" not in retry_args:
+                                                if retry_func["name"] in ("read", "write", "edit"):
+                                                    retry_args["file_path"] = retry_args["file"]
+                                            if isinstance(retry_args, dict):
+                                                for key in ("path", "file_path", "file"):
+                                                    if key in retry_args and isinstance(retry_args[key], str):
+                                                        if EXPECTED_SCRIPT_BASE_PATH.startswith('/') and retry_args[key].startswith(EXPECTED_SCRIPT_BASE_PATH.lstrip('/')):
+                                                            retry_args[key] = '/' + retry_args[key]
+                                            retry_tool_calls.append({"function": {"name": retry_func["name"], "arguments": retry_args}})
+
+                                    if not retry_tool_calls and retry_full_content:
+                                        retry_extracted = extract_hallucinated_tools(retry_full_content)
+                                        if retry_extracted:
+                                            for retry_obj, retry_start, retry_end in reversed(retry_extracted):
+                                                retry_args_obj = retry_obj["arguments"]
+                                                if isinstance(retry_args_obj, dict) and "file" in retry_args_obj and "file_path" not in retry_args_obj:
+                                                    if retry_obj["name"] in ("read", "write", "edit"):
+                                                        retry_args_obj = dict(retry_args_obj)
+                                                        retry_args_obj["file_path"] = retry_args_obj["file"]
+                                                if isinstance(retry_args_obj, dict):
+                                                    for key in ("path", "file_path", "file"):
+                                                        if key in retry_args_obj and isinstance(retry_args_obj[key], str):
+                                                            if EXPECTED_SCRIPT_BASE_PATH.startswith('/') and retry_args_obj[key].startswith(EXPECTED_SCRIPT_BASE_PATH.lstrip('/')):
+                                                                retry_args_obj = dict(retry_args_obj)
+                                                                retry_args_obj[key] = '/' + retry_args_obj[key]
+                                                retry_tool_calls.append({"function": {"name": retry_obj["name"], "arguments": retry_args_obj}})
+                                                retry_full_content = retry_full_content[:retry_start] + retry_full_content[retry_end:]
+                                            retry_tool_calls.reverse()
+
+                                    if retry_tool_calls:
+                                        final_tool_calls = retry_tool_calls
+                                        full_content = re.sub(r'<\|tool[^>]*\|>', '', retry_full_content)
+                                        full_content = re.sub(r'</?think>', '', full_content).strip()
+                            except Exception:
+                                pass
+                        if tool_action_requested and not plain_failure_text and not final_tool_calls:
+                            full_content = "Die angeforderte Tool-Aktion wurde nicht ausgefuehrt. Das Modell hat nur Text statt eines echten Tool-Calls zurueckgegeben."
 
                     message_obj = {"role": "assistant", "content": full_content}
                     if final_tool_calls:
@@ -1588,6 +1784,24 @@ setInterval(loadLogs, 1000);
             passthrough_data.pop('tool_choice', None)
             passthrough_data.pop('options', None)
             passthrough_data.pop('parallel_tool_calls', None)
+
+            if passthrough_data.get('messages') and passthrough_data['messages'][0].get('role') == 'system':
+                sys_msg = passthrough_data['messages'][0].get('content', '')
+                sys_msg = re.sub(r'## Silent Replies.*?(?:Right: NO_REPLY|NO_REPLY)', '', sys_msg, flags=re.DOTALL)
+                sys_msg = sys_msg.replace("When you have nothing to say, respond with ONLY: NO_REPLY", "")
+                dynamic_pattern = r"(?i)(The current date and time is.*?$|Current Time:.*?$|Date:.*?$)"
+                dynamic_parts = re.findall(dynamic_pattern, sys_msg, flags=re.MULTILINE)
+                if dynamic_parts:
+                    sys_msg = re.sub(dynamic_pattern, "", sys_msg, flags=re.MULTILINE).strip()
+                    if len(passthrough_data['messages']) > 1 and passthrough_data['messages'][-1].get('role') == 'user':
+                        passthrough_data['messages'][-1]['content'] += "\n\n[System-Info: " + " | ".join(dynamic_parts) + "]"
+
+                if ENABLE_PROMPT_TRIMMING and TRIM_SKILLS:
+                    skills_pattern = "|".join(map(re.escape, TRIM_SKILLS))
+                    sys_msg = re.sub(fr'<skill>\s*<name>(?:{skills_pattern})</name>.*?</skill>', '', sys_msg, flags=re.DOTALL)
+                    sys_msg = re.sub(r'\n\s*\n', '\n', sys_msg)
+
+                passthrough_data['messages'][0]['content'] = sys_msg
 
             if 'messages' in passthrough_data:
                 passthrough_data['messages'], removed_tool_protocol = clean_cloud_passthrough_messages(
@@ -1659,7 +1873,136 @@ setInterval(loadLogs, 1000);
                                 args = json.loads(args) if isinstance(args, str) else args
                             except Exception:
                                 args = {}
+                            if isinstance(args, dict) and "file" in args and "file_path" not in args:
+                                if func["name"] in ("read", "write", "edit"):
+                                    args["file_path"] = args["file"]
+                            if isinstance(args, dict):
+                                for key in ("path", "file_path", "file"):
+                                    if key in args and isinstance(args[key], str):
+                                        if EXPECTED_SCRIPT_BASE_PATH.startswith('/') and args[key].startswith(EXPECTED_SCRIPT_BASE_PATH.lstrip('/')):
+                                            args[key] = '/' + args[key]
                             final_tool_calls.append({"function": {"name": func["name"], "arguments": args}})
+
+                    if not final_tool_calls and full_content:
+                        extracted = extract_hallucinated_tools(full_content)
+                        if extracted:
+                            for obj, start, end in reversed(extracted):
+                                args_obj = obj["arguments"]
+                                if isinstance(args_obj, dict) and "file" in args_obj and "file_path" not in args_obj:
+                                    if obj["name"] in ("read", "write", "edit"):
+                                        args_obj = dict(args_obj)
+                                        args_obj["file_path"] = args_obj["file"]
+                                if isinstance(args_obj, dict):
+                                    for key in ("path", "file_path", "file"):
+                                        if key in args_obj and isinstance(args_obj[key], str):
+                                            if EXPECTED_SCRIPT_BASE_PATH.startswith('/') and args_obj[key].startswith(EXPECTED_SCRIPT_BASE_PATH.lstrip('/')):
+                                                args_obj = dict(args_obj)
+                                                args_obj[key] = '/' + args_obj[key]
+                                final_tool_calls.append({"function": {"name": obj["name"], "arguments": args_obj}})
+                                full_content = full_content[:start] + full_content[end:]
+                            final_tool_calls.reverse()
+                    full_content = re.sub(r'<\|tool[^>]*\|>', '', full_content)
+                    full_content = re.sub(r'</?think>', '', full_content).strip()
+                    if not final_tool_calls and full_content and original_messages and original_messages[-1].get('role') == 'user':
+                        last_user_content_lower = original_messages[-1].get('content', '').lower()
+                        matched_rescue = any(
+                            all(kw.lower() in last_user_content_lower for kw in rescue.get("keywords", []))
+                            for rescue in EMERGENCY_RESCUES
+                        )
+                        file_action_requested = (
+                            ("datei" in last_user_content_lower or ".md" in last_user_content_lower or ".txt" in last_user_content_lower) and
+                            any(token in last_user_content_lower for token in ("lies", "lese", "read", "schreib", "schreibe", "write", "edit", "bearbeit", "inhalt", "zeige", "gib mir"))
+                        )
+                        script_action_requested = EXPECTED_SCRIPT_BASE_PATH.lower() in last_user_content_lower
+                        plain_failure_text = re.search(r'(tool result:|fehler|error|failed|konnte nicht|kann nicht|entschuldigung)', full_content, re.IGNORECASE)
+                        tool_action_requested = matched_rescue or file_action_requested or script_action_requested
+                        if tool_action_requested and not plain_failure_text and 'integrate.api.nvidia.com' not in LLM_SERVER_URL:
+                            try:
+                                retry_data = copy.deepcopy(passthrough_data)
+                                retry_data['tool_choice'] = "required"
+                                if DEBUG_MODE:
+                                    print("[DEBUG] COMPAT_PASS_THROUGH: retrying tool request with tool_choice=required.")
+                                retry_req = requests.post(LLM_SERVER_URL, json=retry_data, headers=LLM_REQUEST_HEADERS, stream=True, timeout=180)
+                                if retry_req.status_code == 200:
+                                    retry_merged_tools = {}
+                                    retry_full_content = ""
+                                    for retry_chunk in retry_req.iter_lines():
+                                        if not retry_chunk:
+                                            continue
+                                        retry_line = retry_chunk.decode('utf-8').strip()
+                                        if DEBUG_MODE:
+                                            print(f"[FULL-PT RETRY] {retry_line}")
+                                        if not retry_line.startswith("data: "):
+                                            continue
+                                        retry_data_str = retry_line[6:]
+                                        if retry_data_str == "[DONE]":
+                                            break
+                                        try:
+                                            retry_obj = json.loads(retry_data_str)
+                                            retry_choices = retry_obj.get("choices", [])
+                                            if not retry_choices:
+                                                continue
+                                            retry_delta = retry_choices[0].get("delta", {})
+                                            if retry_delta.get("content"):
+                                                retry_full_content += retry_delta["content"]
+                                            if "tool_calls" in retry_delta:
+                                                for retry_tc in retry_delta["tool_calls"]:
+                                                    retry_idx = retry_tc.get("index", 0)
+                                                    if retry_idx not in retry_merged_tools:
+                                                        retry_merged_tools[retry_idx] = {"name": "", "arguments": ""}
+                                                    if "function" in retry_tc:
+                                                        if retry_tc["function"].get("name"):
+                                                            retry_merged_tools[retry_idx]["name"] += retry_tc["function"]["name"]
+                                                        if retry_tc["function"].get("arguments"):
+                                                            retry_merged_tools[retry_idx]["arguments"] += retry_tc["function"]["arguments"]
+                                        except Exception:
+                                            continue
+
+                                    retry_tool_calls = []
+                                    for retry_idx, retry_func in retry_merged_tools.items():
+                                        if retry_func["name"]:
+                                            retry_args = retry_func["arguments"]
+                                            try:
+                                                retry_args = json.loads(retry_args) if isinstance(retry_args, str) else retry_args
+                                            except Exception:
+                                                retry_args = {}
+                                            if isinstance(retry_args, dict) and "file" in retry_args and "file_path" not in retry_args:
+                                                if retry_func["name"] in ("read", "write", "edit"):
+                                                    retry_args["file_path"] = retry_args["file"]
+                                            if isinstance(retry_args, dict):
+                                                for key in ("path", "file_path", "file"):
+                                                    if key in retry_args and isinstance(retry_args[key], str):
+                                                        if EXPECTED_SCRIPT_BASE_PATH.startswith('/') and retry_args[key].startswith(EXPECTED_SCRIPT_BASE_PATH.lstrip('/')):
+                                                            retry_args[key] = '/' + retry_args[key]
+                                            retry_tool_calls.append({"function": {"name": retry_func["name"], "arguments": retry_args}})
+
+                                    if not retry_tool_calls and retry_full_content:
+                                        retry_extracted = extract_hallucinated_tools(retry_full_content)
+                                        if retry_extracted:
+                                            for retry_obj, retry_start, retry_end in reversed(retry_extracted):
+                                                retry_args_obj = retry_obj["arguments"]
+                                                if isinstance(retry_args_obj, dict) and "file" in retry_args_obj and "file_path" not in retry_args_obj:
+                                                    if retry_obj["name"] in ("read", "write", "edit"):
+                                                        retry_args_obj = dict(retry_args_obj)
+                                                        retry_args_obj["file_path"] = retry_args_obj["file"]
+                                                if isinstance(retry_args_obj, dict):
+                                                    for key in ("path", "file_path", "file"):
+                                                        if key in retry_args_obj and isinstance(retry_args_obj[key], str):
+                                                            if EXPECTED_SCRIPT_BASE_PATH.startswith('/') and retry_args_obj[key].startswith(EXPECTED_SCRIPT_BASE_PATH.lstrip('/')):
+                                                                retry_args_obj = dict(retry_args_obj)
+                                                                retry_args_obj[key] = '/' + retry_args_obj[key]
+                                                retry_tool_calls.append({"function": {"name": retry_obj["name"], "arguments": retry_args_obj}})
+                                                retry_full_content = retry_full_content[:retry_start] + retry_full_content[retry_end:]
+                                            retry_tool_calls.reverse()
+
+                                    if retry_tool_calls:
+                                        final_tool_calls = retry_tool_calls
+                                        full_content = re.sub(r'<\|tool[^>]*\|>', '', retry_full_content)
+                                        full_content = re.sub(r'</?think>', '', full_content).strip()
+                            except Exception:
+                                pass
+                        if tool_action_requested and not plain_failure_text and not final_tool_calls:
+                            full_content = "Die angeforderte Tool-Aktion wurde nicht ausgefuehrt. Das Modell hat nur Text statt eines echten Tool-Calls zurueckgegeben."
 
                     message_obj = {"role": "assistant", "content": full_content}
                     if final_tool_calls:
@@ -2029,6 +2372,11 @@ setInterval(loadLogs, 1000);
                     args = tc['function']['arguments']
                     try: args = json.loads(args) if isinstance(args, str) else args
                     except: args = {}
+                    if isinstance(args, dict):
+                        for key in ("path", "file_path", "file"):
+                            if key in args and isinstance(args[key], str):
+                                if EXPECTED_SCRIPT_BASE_PATH.startswith('/') and args[key].startswith(EXPECTED_SCRIPT_BASE_PATH.lstrip('/')):
+                                    args[key] = '/' + args[key]
                     output_tool_calls.append({"function": {"name": tc['function']['name'], "arguments": args}})
                 message_obj["tool_calls"] = output_tool_calls
 
@@ -2049,7 +2397,7 @@ if __name__ == '__main__':
         kill_other_instances()
 
     print(f"==========================================")
-    print(f"ClawCut Universal Proxy (V4.0.6)")
+    print(f"ClawCut Universal Proxy (V4.10.8)")
     _profile_target = cfg.get('base_url', f"{cfg.get('ip', '?')}:{cfg.get('port', '?')}")
     print(f"PROFILE SELECTED: {SELECTED_PROFILE.upper()} ({_profile_target})")
     print(f"MODEL USED: {cfg['model_name']}")
