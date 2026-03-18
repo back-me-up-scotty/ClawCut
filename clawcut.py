@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-ClawCut - Universal LLM Bridge & Proxy (BETA) - v. 4.0.4
+ClawCut - Universal LLM Bridge & Proxy (BETA) - v. 4.0.6
 -------------------------------------------------------------------------------
 LICENSE: ClawCut Personal & Non-Commercial License
 Copyright (c) 2026 Niels Gerhardt
@@ -261,7 +261,7 @@ FORCE_AUTO_DELIVERY = False
 # Cron jobs lack a native chat interface, so OpenClaw's native routing won't show the text anywhere.
 FORCE_CRON_DELIVERY = False
 AUTO_DELIVERY_CHANNEL = "whatsapp"  
-AUTO_DELIVERY_TARGET = "+49123456789" 
+AUTO_DELIVERY_TARGET = "+491123456" 
 
 
 # ==========================================
@@ -278,7 +278,7 @@ AUTO_DELIVERY_TARGET = "+49123456789"
 EXPECTED_SCRIPT_BASE_PATH = "/home/user/"
 
 # Default message sent to the user when an audio file is delivered
-AUDIO_DELIVERY_MESSAGE = "Here is your audio."
+AUDIO_DELIVERY_MESSAGE = "Here is your audio"
 
 # 1. System Prompt Trimming (Cognitive Overload Protection)
 # If True, the proxy aggressively strips out the skills listed in TRIM_SKILLS before sending 
@@ -308,11 +308,11 @@ ATTENTION_FORCER_TEXT = "\n\n[SYSTEM REMINDER: NEVER respond directly with text 
 # ENABLE_EMERGENCY_RESCUE intervenes after the LLM—it scans the LLM’s text response in `generate()` 
 # and converts recognized keywords into an `exec` call if the model forgot to use the tool.
 
-ENABLE_EMERGENCY_RESCUE = False
-ENABLE_INPUT_RESCUE = True
+ENABLE_EMERGENCY_RESCUE = True
+ENABLE_INPUT_RESCUE = False
 EMERGENCY_RESCUES = [
     {
-        "keywords": ["weather", "tell"], 
+        "keywords": ["weather", "check"], 
         "command": 'bash /home/nhg/weather.sh "Frankfurt"'
     },
     {
@@ -482,6 +482,7 @@ def build_short_circuit_response(requested_model, tool_name, arguments):
 def clean_cloud_passthrough_messages(messages):
     cleaned = []
     had_tool_protocol = False
+    latest_tool_content = None
 
     for m in copy.deepcopy(messages or []):
         role = m.get('role')
@@ -491,6 +492,10 @@ def clean_cloud_passthrough_messages(messages):
         # Keep the natural-language history, strip the tool protocol.
         if role == 'tool':
             had_tool_protocol = True
+            if isinstance(content, dict):
+                content = json.dumps(content)
+            if content not in (None, '', []):
+                latest_tool_content = content
             continue
 
         if role == 'assistant':
@@ -515,6 +520,14 @@ def clean_cloud_passthrough_messages(messages):
                 merged[-1]['content'] = prev_content + '\n\n' + new_content
         else:
             merged.append(m)
+
+    if latest_tool_content:
+        if merged and merged[-1].get('role') == 'user':
+            merged[-1] = dict(merged[-1])
+            prev_content = merged[-1].get('content', '')
+            merged[-1]['content'] = prev_content + '\n\nTool result:\n' + latest_tool_content if prev_content else 'Tool result:\n' + latest_tool_content
+        else:
+            merged.append({"role": "user", "content": 'Tool result:\n' + latest_tool_content})
 
     return merged, had_tool_protocol
 
@@ -1467,8 +1480,25 @@ setInterval(loadLogs, 1000);
                             if isinstance(args, dict):
                                 tc['function']['arguments'] = json.dumps(args)
 
+            removed_tool_protocol = False
+            if 'integrate.api.nvidia.com' in LLM_SERVER_URL:
+                if 'messages' in passthrough_data:
+                    passthrough_data['messages'], removed_tool_protocol = clean_cloud_passthrough_messages(
+                        passthrough_data['messages']
+                    )
+                if 'tools' in passthrough_data:
+                    if removed_tool_protocol:
+                        passthrough_data.pop('tools', None)
+                    else:
+                        sanitized_tools = copy.deepcopy(passthrough_data['tools'])
+                        for tool in sanitized_tools:
+                            sanitize_tool_schema(tool.get('function', {}).get('parameters', {}))
+                        passthrough_data['tools'] = sanitized_tools
+
             if DEBUG_MODE:
                 print(f"[DEBUG] FULL_PASS_THROUGH_MODE active — forwarding raw request.")
+                if 'integrate.api.nvidia.com' in LLM_SERVER_URL and removed_tool_protocol:
+                    print("[DEBUG] FULL_PASS_THROUGH: removed prior tool protocol for NVIDIA compatibility.")
                 print(json.dumps(passthrough_data, indent=2, ensure_ascii=False))
                 print(f"[DEBUG] {'-'*60}")
             raw_req = requests.post(LLM_SERVER_URL, json=passthrough_data, headers=LLM_REQUEST_HEADERS, stream=True, timeout=600)
@@ -1736,7 +1766,14 @@ setInterval(loadLogs, 1000);
 
         # Attention-Forcer Injection for small models
         if not PASS_THROUGH_MODE and ENABLE_ATTENTION_FORCER and messages and messages[-1].get('role') == 'user':
-            if ATTENTION_FORCER_TEXT not in messages[-1]['content']:
+            last_user_content_lower = messages[-1].get('content', '').lower()
+            attention_forcer_needed = EXPECTED_SCRIPT_BASE_PATH.lower() in last_user_content_lower
+            if not attention_forcer_needed:
+                for rescue in EMERGENCY_RESCUES:
+                    if any(kw.lower() in last_user_content_lower for kw in rescue.get("keywords", [])):
+                        attention_forcer_needed = True
+                        break
+            if attention_forcer_needed and ATTENTION_FORCER_TEXT not in messages[-1]['content']:
                 messages[-1]['content'] += ATTENTION_FORCER_TEXT
 
         # Format sanitization for OpenAI endpoint (Required for both modes to prevent 400 Bad Request)
@@ -2012,7 +2049,7 @@ if __name__ == '__main__':
         kill_other_instances()
 
     print(f"==========================================")
-    print(f"ClawCut Universal Proxy (V4.0.4)")
+    print(f"ClawCut Universal Proxy (V4.0.6)")
     _profile_target = cfg.get('base_url', f"{cfg.get('ip', '?')}:{cfg.get('port', '?')}")
     print(f"PROFILE SELECTED: {SELECTED_PROFILE.upper()} ({_profile_target})")
     print(f"MODEL USED: {cfg['model_name']}")
