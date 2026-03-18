@@ -356,7 +356,7 @@ ATTENTION_FORCER_TEXT = "\n\n[SYSTEM-REMINDER: NEVER respond to requests for loc
 
 `ENABLE_EMERGENCY_RESCUE` — scans the LLM's text response and converts recognized keywords into exec calls if the model forgot to use the tool.
 
-Scripts down below are examples how to use. These are my own scripts I want OpenClaw to call. Change to your scripts (if you have some) and set `ENABLE_EMERGENCY_RESCUE = True`
+Scripts down below are examples how to use. These are my own scripts I want OpenClaw to call. Change to your scripts (if you have some) and set `ENABLE_INPUT_RESCUE = True`
 
 ```python
 ENABLE_EMERGENCY_RESCUE = True
