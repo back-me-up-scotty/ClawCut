@@ -57,6 +57,7 @@ configuration or with future OpenClaw updates.
 - **PASS-THROUGH MODES** — Three levels: full proxy intervention, small (format-only), or full cloud passthrough.
 - **CLOUD PROVIDER SUPPORT** — Connect to NVIDIA, OpenAI, or any OpenAI-compatible API via profile configuration.
 - **PROMPT TRIMMING** — Strips unused skills from the system prompt to keep context small.
+- **CRITICAL FORMAT GUARD** — Marks file extensions that should not be treated as safe raw `read` input for the model.
 - **SMART AMNESIA** — Truncates chat history after tool executions to free context for the model.
 - **ATTENTION FORCER** — Injects a reminder at the end of user messages to enforce tool usage.
 - **INPUT RESCUE** — Short-circuits known incoming requests (Cron jobs) to bypass LLM latency.
@@ -207,16 +208,16 @@ PROFILES = {
 
 ClawCut supports five `pass_through` values. Despite the shared naming, these modes do **not** all behave the same way. Some are true pass-through styles, while others actively manipulate requests and responses. 
 
-Each model behaves differently within the same mode. It’s best to test your way down from “Full” or in the reverse order and see which behavior leads to the result you want—that is, achieving a good balance between response time and the quality of the answers. 
+Each model behaves differently within the same mode. It’s best to test your way through the modes and see which balance of response speed, tool reliability, and raw behavior works best for your setup.
 
-For example, while I was able to get Qwen2.5-Coder-7B-Instruct-4bit to run tools just fine using the False setting and tool injection, Qwen3.5:9b did not respond at all when set to False. Conversely, Qwen2.5-Coder-7B-Instruct-4bit can no longer run tools when set to Small, Compact, or Full.
+For example, one local model may work best with `false` and heavy proxy guidance, while another may behave much better in `"small"`, `"full"`, or even `"transparent"`. There is no universal best setting across all local and cloud backends.
 
 | `pass_through` value | Behavior | What ClawCut does | Best used for |
 |---|---|---|---|
-| `false` | Full proxy intervention | Enables prompt trimming, smart amnesia, attention forcer, input rescue, emergency rescue, loop breaking, tool filtering/augmentation, and output cleanup | Small local models that need strong guidance and stabilization |
-| `"small"` | Format translation only | Keeps the translator pipeline between OpenClaw/Ollama-style input and OpenAI-style upstream requests, but skips the major intervention features | Stronger local models where you still want format bridging without heavy proxy behavior |
-| `"compat"` | Compatibility pass-through | Keeps the pass-through architecture, but sanitizes message history, tool protocol, and tool schemas for stricter cloud endpoints | Cloud providers that are nominally OpenAI-compatible but fail on tool history, schemas, or specific fields |
-| `"full"` | Pass-through with recovery | Keeps the pass-through architecture, but still applies proxy-side cleanup and fallback logic such as prompt trimming, tool-call recovery, retry logic, and path normalization where needed | Cloud or local models that mostly work raw, but still benefit from ClawCut recovery logic |
+| `false` | Full proxy intervention | Applies the full stabilization layer: prompt trimming, smart amnesia, attention forcer, input rescue, emergency rescue, tool recovery, critical-format guarding, retries, and output cleanup | Small local models that need strong guidance and stabilization |
+| `"small"` | Format translation only | Keeps the translator pipeline between OpenClaw/Ollama-style input and OpenAI-style upstream requests, but skips the heavier intervention features | Stronger local models where you still want format bridging without heavy proxy behavior |
+| `"compat"` | Compatibility pass-through | Keeps the pass-through architecture, but sanitizes message history, tool protocol, binary tool results, and tool schemas for stricter endpoints | Cloud providers that are nominally OpenAI-compatible but fail on tool history, schemas, or specific fields |
+| `"full"` | Pass-through with recovery | Keeps the pass-through architecture, but still applies proxy-side cleanup and fallback logic such as prompt trimming, binary-result sanitization, tool-call recovery, retry logic, and path normalization where needed | Cloud or local models that mostly work raw, but still benefit from ClawCut recovery logic |
 | `"transparent"` | Transparent pass-through | Forwards the request upstream without prompt/content/tool manipulation; only the selected model override and Ollama-compatible response wrapping remain | Debugging, protocol inspection, and providers/models that already accept the raw payload without cleanup |
 
 ### Detailed Behavior
@@ -242,6 +243,7 @@ This mode keeps the translation layer but disables the main proxy manipulation f
 In practice, it:
 - translates between OpenClaw/Ollama-style payloads and OpenAI-style upstream requests
 - keeps stream reconstruction and tool-call reconstruction
+- keeps the critical-format guard for unsafe raw binary/tool-result cases
 - does **not** apply prompt trimming, smart amnesia, attention forcing, input rescue, or emergency rescue
 
 Use this when you want a cleaner bridge layer without the stronger intervention logic.
@@ -253,6 +255,7 @@ It keeps the pass-through architecture, but adds a narrow compatibility layer th
 - remove prior `tool` messages from history
 - remove historical `assistant.tool_calls`
 - drop `tools` after prior tool protocol has appeared
+- sanitize unsafe binary tool results before the next model turn
 - sanitize tool schemas for stricter providers
 
 Use this when `"full"` fails because a provider claims OpenAI compatibility but crashes on real-world tool payloads.
@@ -264,6 +267,7 @@ It:
 - forwards the incoming request upstream
 - overrides the model to the currently selected profile
 - may trim the prompt
+- may sanitize unsafe binary tool results or critical direct-read outputs
 - may clean or reconstruct tool calls
 - may retry locally with stricter tool settings
 - may normalize path-style arguments
@@ -278,6 +282,7 @@ It:
 - forwards the incoming request upstream as-is
 - overrides only the model to the currently selected profile
 - does **not** trim prompts
+- does **not** sanitize binary tool results or critical direct-read outputs
 - does **not** sanitize tool schemas
 - does **not** clean message history
 - does **not** reconstruct pseudo-tool-calls from plain text
@@ -363,6 +368,23 @@ TRIM_SKILLS = [
     "video-frames", "wacli", "weather"
 ]
 ```
+
+### Critical Direct-Read Extensions
+
+`CRITICAL_DIRECT_READ_EXTENSIONS` defines file extensions that ClawCut should treat as critical binary/container-style formats instead of normal text files.
+
+This setting is mainly a protection against poisoned prompts:
+- if the model tries to `read` one of these formats directly, ClawCut avoids feeding raw binary or unreadable container data back into the next prompt
+- for PDFs, ClawCut can redirect the read path to text extraction instead of returning raw PDF bytes
+- write, edit, and delete operations are **not** disabled by this setting; it only affects unsafe direct-read handling
+
+In the web UI this appears as `CRITICAL_DIRECT_READ_EXTENSIONS (critical formats, comma separated)`.
+
+```python
+CRITICAL_DIRECT_READ_EXTENSIONS = [".pdf", ".docx", ".pptx", ".xlsx"]
+```
+
+Use it for formats that are usually not safe to pass through a plain `read(...)` flow. Typical examples are PDFs, Office files, archives, or other container/binary formats.
 
 ### Attention Forcer
 
@@ -560,4 +582,3 @@ Use `"pass_through": False` for 7B/8B models (they need trimming, amnesia, and t
 
 - The first request after a `/reset` or session start is always slower — the full context window is processed for the first time. From the second request onward, response times drop significantly.
 - ClawCut is experimental. OpenClaw updates may break compatibility. Fork it, adapt it, share your results.
-
