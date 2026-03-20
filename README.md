@@ -454,10 +454,19 @@ For cloud profiles, `openclaw.json` stays unchanged. All connection details live
 In `"full"` passthrough mode, ClawCut automatically:
 - Overrides the `model` field with the profile's `model_id`
 - Adds `Authorization: Bearer <api_key>` to request headers
-- Removes Ollama-specific fields (`options`, `tool_choice`)
-- Filters `role: "tool"` messages from history (unsupported by cloud APIs)
-- Filters empty assistant messages
+- Removes Ollama-specific fields such as `options`, `tool_choice`, and `parallel_tool_calls`
+- Sanitizes unsafe binary or critical direct-read tool results before forwarding
+- Normalizes historical tool-call arguments for stricter OpenAI-compatible backends
+- Applies provider-specific compatibility cleanup where needed
 - Translates the OpenAI SSE stream back to Ollama NDJSON for OpenClaw
+
+In `"transparent"` passthrough mode, ClawCut instead:
+- Still overrides the `model` field with the selected profile's `model_id`
+- Still adds `Authorization: Bearer <api_key>` when configured
+- Still translates the upstream SSE stream back to Ollama NDJSON for OpenClaw
+- Does **not** trim prompts, sanitize tool history, sanitize binary tool results, retry, rescue, or normalize arguments
+
+Use `"full"` for day-to-day cloud usage when the provider needs some cleanup or recovery help. Use `"transparent"` when you want true raw forwarding for debugging or protocol inspection and accept that stricter providers may reject untouched tool/history payloads.
 
 ---
 
