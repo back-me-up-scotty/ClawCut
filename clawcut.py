@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-ClawCut - Universal LLM Bridge & Proxy (BETA) - v. 4.10.24
+ClawCut - Universal LLM Bridge & Proxy (BETA) - v. 4.10.30
 -------------------------------------------------------------------------------
 LICENSE: ClawCut Personal & Non-Commercial License
 Copyright (c) 2026 Niels Gerhardt
@@ -126,14 +126,14 @@ PROFILES = {
     # "transparent" - Transparent passthrough - No prompt/content/tool manipulation. Only model override + stream protocol translation remain.
 
     "LLM1": {
-        "ip": "192.168.0.xxx", # No api_key, no base_url → local, uses http://ip:port/v1/chat/completions
+        "ip": "192.168.0.184", # No api_key, no base_url → local, uses http://ip:port/v1/chat/completions
         "port": 8090,
         "model_id": "ollama/Qwen2.5-Coder-7B-Instruct-4bit",
         "model_name": "mlx-community/Qwen2.5-Coder-7B-Instruct-4bit",
         "pass_through": False       # Full proxy intervention for small local models
     },
     "LLM2": {
-        "ip": "192.168.0.xxx",
+        "ip": "192.168.0.167",
         "port": 11434,
         "model_id": "ollama/mistral-nemo",
         "model_name": "mistral-nemo",
@@ -264,7 +264,7 @@ FORCE_AUTO_DELIVERY = False
 # Cron jobs lack a native chat interface, so OpenClaw's native routing won't show the text anywhere.
 FORCE_CRON_DELIVERY = False
 AUTO_DELIVERY_CHANNEL = "whatsapp"  
-AUTO_DELIVERY_TARGET = "+123456789" 
+AUTO_DELIVERY_TARGET = "+11234556789" 
 
 
 # ==========================================
@@ -283,7 +283,7 @@ EXPECTED_SCRIPT_BASE_PATH = "/home/user/"
 # File extensions that should not be treated as safe direct-read text files.
 # These files often need a dedicated tool, skill, or extraction command instead of raw `read`.
 # They may still be written, edited, or removed through normal tools or skills.
-CRITICAL_DIRECT_READ_EXTENSIONS = [".pdf"]
+CRITICAL_DIRECT_READ_EXTENSIONS = [".pdf,.docx"]
 
 # Default message sent to the user when an audio file is delivered
 AUDIO_DELIVERY_MESSAGE = "Here is your audio."
@@ -320,8 +320,8 @@ ENABLE_EMERGENCY_RESCUE = True
 ENABLE_INPUT_RESCUE = False
 EMERGENCY_RESCUES = [
     {
-        "keywords": ["weather", "check"], 
-        "command": 'bash /home/user/weather.sh "Frankfurt"'
+        "keywords": ["wetter", "check"], 
+        "command": 'bash /home/user/weather.sh "New York"'
     },
     {
         "keywords": ["diesel", "price"], 
@@ -497,7 +497,7 @@ def extract_hallucinated_tools(text):
                                 end_pos
                             ))
                     except Exception: pass
-    pseudo_call_re = re.compile(r'(?s)(```[a-zA-Z]*\s*)?((?:read|write|edit|process|exec))\((.*?)\)(\s*```)?')
+    pseudo_call_re = re.compile(r'(?s)(```[a-zA-Z]*\s*)?(?<![\w.])((?:read|write|edit|process|exec|message))\((.*?)\)(\s*```)?')
     for match in pseudo_call_re.finditer(text):
         call_name = match.group(2)
         args_src = match.group(3).strip()
@@ -524,10 +524,26 @@ def extract_hallucinated_tools(text):
                 tool_name = kwargs.pop("action")
             if tool_name in ("read", "write", "edit") and "path" in kwargs and "file_path" not in kwargs:
                 kwargs["file_path"] = kwargs["path"]
+            if not kwargs:
+                continue
             if tool_name != "exec" or "command" in kwargs:
                 jsons.append(({"name": tool_name, "arguments": kwargs}, match.start(), match.end()))
         except Exception:
             pass
+    media_directive_re = re.compile(r'\[\[\s*(media_path|media|filePath|path)\s*:\s*(.*?)\s*\]\]', re.DOTALL)
+    for match in media_directive_re.finditer(text):
+        media_key = match.group(1)
+        media_value = match.group(2).strip().strip('`').strip()
+        if not media_value:
+            continue
+        media_args = {"action": "send"}
+        if media_key in ("media_path", "media"):
+            media_args["media"] = media_value
+        if media_key in ("media_path", "path"):
+            media_args["path"] = media_value
+        if media_key in ("media_path", "filePath"):
+            media_args["filePath"] = media_value
+        jsons.append(({"name": "message", "arguments": media_args}, match.start(), match.end()))
     return jsons
 
 def build_short_circuit_response(requested_model, tool_name, arguments):
@@ -654,6 +670,7 @@ def clean_cloud_passthrough_messages(messages):
     cleaned = []
     had_tool_protocol = False
     latest_tool_content = None
+    append_latest_tool_result = bool(messages and messages[-1].get('role') == 'tool')
 
     for m in copy.deepcopy(messages or []):
         role = m.get('role')
@@ -692,7 +709,7 @@ def clean_cloud_passthrough_messages(messages):
         else:
             merged.append(m)
 
-    if latest_tool_content:
+    if latest_tool_content and append_latest_tool_result:
         if merged and merged[-1].get('role') == 'user':
             merged[-1] = dict(merged[-1])
             prev_content = merged[-1].get('content', '')
@@ -1952,13 +1969,11 @@ setInterval(loadLogs, 1000);
                             for rescue in EMERGENCY_RESCUES
                         )
                         file_action_requested = (
-                            (
-                                "datei" in last_user_content_lower or
-                                ".md" in last_user_content_lower or
-                                ".txt" in last_user_content_lower or
-                                mentions_critical_extension(last_user_content_lower)
-                            ) and
-                            any(token in last_user_content_lower for token in ("lies", "lese", "read", "schreib", "schreibe", "write", "edit", "bearbeit", "inhalt", "zeige", "gib mir", "lösch", "loesch", "delete", "remove", "erstell", "anleg", "create"))
+                            "[media attached:" in last_user_content_lower or
+                            ".md" in last_user_content_lower or
+                            ".txt" in last_user_content_lower or
+                            mentions_critical_extension(last_user_content_lower) or
+                            re.search(r'(?m)(?:^|\s)/[^\s]+\.[a-z0-9]+', last_user_content_lower)
                         )
                         script_action_requested = EXPECTED_SCRIPT_BASE_PATH.lower() in last_user_content_lower
                         plain_failure_text = re.search(r'(tool result:|fehler|error|failed|konnte nicht|kann nicht|entschuldigung)', full_content, re.IGNORECASE)
@@ -2141,13 +2156,10 @@ setInterval(loadLogs, 1000);
                 removed_tool_protocol = False
 
             if 'tools' in passthrough_data:
-                if removed_tool_protocol:
-                    passthrough_data.pop('tools', None)
-                else:
-                    sanitized_tools = copy.deepcopy(passthrough_data['tools'])
-                    for tool in sanitized_tools:
-                        sanitize_tool_schema(tool.get('function', {}).get('parameters', {}))
-                    passthrough_data['tools'] = sanitized_tools
+                sanitized_tools = copy.deepcopy(passthrough_data['tools'])
+                for tool in sanitized_tools:
+                    sanitize_tool_schema(tool.get('function', {}).get('parameters', {}))
+                passthrough_data['tools'] = sanitized_tools
 
             if DEBUG_MODE:
                 print(f"[DEBUG] COMPAT_PASS_THROUGH_MODE active — forwarding compatibility-sanitized request.")
@@ -2251,13 +2263,11 @@ setInterval(loadLogs, 1000);
                             for rescue in EMERGENCY_RESCUES
                         )
                         file_action_requested = (
-                            (
-                                "datei" in last_user_content_lower or
-                                ".md" in last_user_content_lower or
-                                ".txt" in last_user_content_lower or
-                                mentions_critical_extension(last_user_content_lower)
-                            ) and
-                            any(token in last_user_content_lower for token in ("lies", "lese", "read", "schreib", "schreibe", "write", "edit", "bearbeit", "inhalt", "zeige", "gib mir", "lösch", "loesch", "delete", "remove", "erstell", "anleg", "create"))
+                            "[media attached:" in last_user_content_lower or
+                            ".md" in last_user_content_lower or
+                            ".txt" in last_user_content_lower or
+                            mentions_critical_extension(last_user_content_lower) or
+                            re.search(r'(?m)(?:^|\s)/[^\s]+\.[a-z0-9]+', last_user_content_lower)
                         )
                         script_action_requested = EXPECTED_SCRIPT_BASE_PATH.lower() in last_user_content_lower
                         plain_failure_text = re.search(r'(tool result:|fehler|error|failed|konnte nicht|kann nicht|entschuldigung)', full_content, re.IGNORECASE)
@@ -2628,12 +2638,12 @@ setInterval(loadLogs, 1000);
                     ) if last_user_content_lower else False
                     file_action_requested = (
                         (
-                            "datei" in last_user_content_lower or
+                            "[media attached:" in last_user_content_lower or
                             ".md" in last_user_content_lower or
                             ".txt" in last_user_content_lower or
-                            mentions_critical_extension(last_user_content_lower)
-                        ) and
-                        any(token in last_user_content_lower for token in ("lies", "lese", "read", "schreib", "schreibe", "write", "edit", "bearbeit", "inhalt", "zeige", "gib mir", "lösch", "loesch", "delete", "remove", "erstell", "anleg", "create", "konvertier", "convert", "umwandel"))
+                            mentions_critical_extension(last_user_content_lower) or
+                            re.search(r'(?m)(?:^|\s)/[^\s]+\.[a-z0-9]+', last_user_content_lower)
+                        )
                     ) if last_user_content_lower else False
                     script_action_requested = EXPECTED_SCRIPT_BASE_PATH.lower() in last_user_content_lower if last_user_content_lower else False
                     plain_failure_text = re.search(r'(tool result:|fehler|error|failed|konnte nicht|kann nicht|entschuldigung)', full_content, re.IGNORECASE)
@@ -2917,7 +2927,7 @@ if __name__ == '__main__':
         kill_other_instances()
 
     print(f"==========================================")
-    print(f"ClawCut Universal Proxy (V4.10.24)")
+    print(f"ClawCut Universal Proxy (V4.10.30)")
     _profile_target = cfg.get('base_url', f"{cfg.get('ip', '?')}:{cfg.get('port', '?')}")
     print(f"PROFILE SELECTED: {SELECTED_PROFILE.upper()} ({_profile_target})")
     print(f"MODEL USED: {cfg['model_name']}")
