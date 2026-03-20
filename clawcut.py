@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-ClawCut - Universal LLM Bridge & Proxy (BETA) - v. 4.10.18
+ClawCut - Universal LLM Bridge & Proxy (BETA) - v. 4.10.24
 -------------------------------------------------------------------------------
 LICENSE: ClawCut Personal & Non-Commercial License
 Copyright (c) 2026 Niels Gerhardt
@@ -264,7 +264,7 @@ FORCE_AUTO_DELIVERY = False
 # Cron jobs lack a native chat interface, so OpenClaw's native routing won't show the text anywhere.
 FORCE_CRON_DELIVERY = False
 AUTO_DELIVERY_CHANNEL = "whatsapp"  
-AUTO_DELIVERY_TARGET = "+1123456789" 
+AUTO_DELIVERY_TARGET = "+123456789" 
 
 
 # ==========================================
@@ -279,6 +279,11 @@ AUTO_DELIVERY_TARGET = "+1123456789"
 # Mac: "/Users/username/"
 # Windows: "C:/Users/username/"
 EXPECTED_SCRIPT_BASE_PATH = "/home/user/"
+
+# File extensions that should not be treated as safe direct-read text files.
+# These files often need a dedicated tool, skill, or extraction command instead of raw `read`.
+# They may still be written, edited, or removed through normal tools or skills.
+CRITICAL_DIRECT_READ_EXTENSIONS = [".pdf"]
 
 # Default message sent to the user when an audio file is delivered
 AUDIO_DELIVERY_MESSAGE = "Here is your audio."
@@ -311,12 +316,12 @@ ATTENTION_FORCER_TEXT = "\n\n[SYSTEM REMINDER: NEVER respond directly with text 
 # ENABLE_EMERGENCY_RESCUE intervenes after the LLM—it scans the LLM’s text response in `generate()` 
 # and converts recognized keywords into an `exec` call if the model forgot to use the tool.
 
-ENABLE_EMERGENCY_RESCUE = False
-ENABLE_INPUT_RESCUE = True
+ENABLE_EMERGENCY_RESCUE = True
+ENABLE_INPUT_RESCUE = False
 EMERGENCY_RESCUES = [
     {
         "keywords": ["weather", "check"], 
-        "command": 'bash /home/user/weather.sh "New York"'
+        "command": 'bash /home/user/weather.sh "Frankfurt"'
     },
     {
         "keywords": ["diesel", "price"], 
@@ -340,6 +345,7 @@ if isinstance(_config_data, dict):
     if "AUTO_DELIVERY_CHANNEL" in _config_data: AUTO_DELIVERY_CHANNEL = _config_data["AUTO_DELIVERY_CHANNEL"]
     if "AUTO_DELIVERY_TARGET" in _config_data: AUTO_DELIVERY_TARGET = _config_data["AUTO_DELIVERY_TARGET"]
     if "EXPECTED_SCRIPT_BASE_PATH" in _config_data: EXPECTED_SCRIPT_BASE_PATH = _config_data["EXPECTED_SCRIPT_BASE_PATH"]
+    if "CRITICAL_DIRECT_READ_EXTENSIONS" in _config_data: CRITICAL_DIRECT_READ_EXTENSIONS = _config_data["CRITICAL_DIRECT_READ_EXTENSIONS"]
     if "AUDIO_DELIVERY_MESSAGE" in _config_data: AUDIO_DELIVERY_MESSAGE = _config_data["AUDIO_DELIVERY_MESSAGE"]
     if "ENABLE_PROMPT_TRIMMING" in _config_data: ENABLE_PROMPT_TRIMMING = _config_data["ENABLE_PROMPT_TRIMMING"]
     if "TRIM_SKILLS" in _config_data: TRIM_SKILLS = _config_data["TRIM_SKILLS"]
@@ -366,6 +372,7 @@ try:
                 "AUTO_DELIVERY_CHANNEL": AUTO_DELIVERY_CHANNEL,
                 "AUTO_DELIVERY_TARGET": AUTO_DELIVERY_TARGET,
                 "EXPECTED_SCRIPT_BASE_PATH": EXPECTED_SCRIPT_BASE_PATH,
+                "CRITICAL_DIRECT_READ_EXTENSIONS": CRITICAL_DIRECT_READ_EXTENSIONS,
                 "AUDIO_DELIVERY_MESSAGE": AUDIO_DELIVERY_MESSAGE,
                 "ENABLE_PROMPT_TRIMMING": ENABLE_PROMPT_TRIMMING,
                 "TRIM_SKILLS": TRIM_SKILLS,
@@ -394,6 +401,7 @@ class DualLogger:
         self.terminal = sys.stdout
         self.filepath = filepath
         self.max_bytes = _parse_size_string(max_size_str)
+        self.last_file_message = None
 
     def _check_size_and_rotate(self):
         if os.path.exists(self.filepath) and os.path.getsize(self.filepath) >= self.max_bytes:
@@ -403,10 +411,25 @@ class DualLogger:
     def write(self, message):
         self.terminal.write(message)
         if WRITE_TO_LOGFILE:
+            terminal_name = getattr(self.terminal, "name", "")
+            if isinstance(terminal_name, str):
+                try:
+                    if os.path.realpath(terminal_name) == os.path.realpath(self.filepath):
+                        return
+                except Exception:
+                    pass
+            try:
+                if hasattr(self.terminal, "isatty") and not self.terminal.isatty():
+                    return
+            except Exception:
+                pass
+            if isinstance(message, str) and message.strip() and message == self.last_file_message:
+                return
             self._check_size_and_rotate()
             try:
                 with open(self.filepath, "a", encoding="utf-8") as log_file:
                     log_file.write(message)
+                self.last_file_message = message if isinstance(message, str) and message.strip() else None
             except IOError: pass
 
     def flush(self):
@@ -528,6 +551,36 @@ def build_short_circuit_response(requested_model, tool_name, arguments):
         }).encode('utf-8') + b'\n'
     return Response(short_circuit_stream(), content_type='application/x-ndjson')
 
+def has_critical_direct_read_extension(file_path):
+    if not isinstance(file_path, str):
+        return False
+    path_lower = file_path.lower()
+    for ext in CRITICAL_DIRECT_READ_EXTENSIONS:
+        if isinstance(ext, str) and ext and path_lower.endswith(ext.lower()):
+            return True
+    return False
+
+def mentions_critical_extension(text):
+    if not isinstance(text, str):
+        return False
+    text_lower = text.lower()
+    for ext in CRITICAL_DIRECT_READ_EXTENSIONS:
+        if isinstance(ext, str) and ext:
+            ext_lower = ext.lower()
+            if ext_lower in text_lower or ext_lower.lstrip('.') in text_lower:
+                return True
+    return False
+
+def looks_like_binary_tool_result(content):
+    if not isinstance(content, str) or not content:
+        return False
+    if content.startswith('%PDF-'):
+        return True
+    sample = content[:4000]
+    control_chars = sum(1 for ch in sample if ord(ch) < 32 and ch not in '\n\r\t')
+    replacement_chars = sample.count('\ufffd') + sample.count('�')
+    return control_chars > 8 or replacement_chars > 8
+
 def rewrite_pdf_read_tool_call(tool_name, arguments):
     parsed_args = arguments
     try:
@@ -538,7 +591,7 @@ def rewrite_pdf_read_tool_call(tool_name, arguments):
 
     if tool_name == "read" and isinstance(parsed_args, dict):
         pdf_path = parsed_args.get("file_path") or parsed_args.get("path") or parsed_args.get("file")
-        if isinstance(pdf_path, str) and pdf_path.lower().endswith('.pdf'):
+        if isinstance(pdf_path, str) and pdf_path.lower().endswith('.pdf') and has_critical_direct_read_extension(pdf_path):
             safe_path = pdf_path.replace('"', '\\"')
             return "exec", {"command": f'pdftotext "{safe_path}" - 2>/dev/null | head -100'}
 
@@ -549,7 +602,7 @@ def sanitize_binary_tool_results(messages):
     previous_assistant = None
 
     for m in copy.deepcopy(messages or []):
-        if m.get('role') == 'tool' and isinstance(m.get('content'), str) and m.get('content', '').startswith('%PDF-'):
+        if m.get('role') == 'tool' and isinstance(m.get('content'), str):
             pdf_path = None
             if previous_assistant and previous_assistant.get('tool_calls'):
                 for tc in previous_assistant.get('tool_calls', []):
@@ -562,17 +615,40 @@ def sanitize_binary_tool_results(messages):
                         pass
                     if isinstance(args, dict):
                         candidate = args.get("file_path") or args.get("path") or args.get("file")
-                        if isinstance(candidate, str) and candidate.lower().endswith('.pdf'):
+                        if has_critical_direct_read_extension(candidate):
                             pdf_path = candidate
                             break
-            if pdf_path:
-                m['content'] = f"Binary PDF content omitted. The previous read tool call targeted a PDF file: {pdf_path}. The read tool returned raw PDF bytes rather than extracted text. Use the exec tool to extract readable text from the PDF before summarizing it."
+            if pdf_path and looks_like_binary_tool_result(m.get('content', '')):
+                m['content'] = f"Binary file content omitted. The previous read tool call targeted a file with a critical direct-read extension: {pdf_path}. The read tool returned raw bytes or unreadable content instead of extracted text. Use a more appropriate tool, skill, or exec-based extraction path before summarizing or editing this file."
 
         sanitized.append(m)
         if m.get('role') == 'assistant':
             previous_assistant = m
 
     return sanitized
+
+def extract_running_exec_session_id(content):
+    if not isinstance(content, str):
+        return None
+    match = re.search(r'Command still running \(session ([^,\)]+), pid \d+\)\. Use process', content)
+    return match.group(1) if match else None
+
+def extract_missing_exec_script_path(command):
+    if not isinstance(command, str):
+        return None
+    match = re.match(r'\s*(?:bash|sh)\s+"?([^"\s]+)"?(?:\s|$)', command)
+    if not match:
+        match = re.match(r'\s*"?(\/[^"\s]+\.sh)"?(?:\s|$)', command)
+    if not match:
+        return None
+    script_path = match.group(1)
+    if not isinstance(script_path, str) or not script_path.startswith('/'):
+        return None
+    if EXPECTED_SCRIPT_BASE_PATH and isinstance(EXPECTED_SCRIPT_BASE_PATH, str) and not script_path.startswith(EXPECTED_SCRIPT_BASE_PATH):
+        return None
+    if not os.path.exists(script_path):
+        return script_path
+    return None
 
 def clean_cloud_passthrough_messages(messages):
     cleaned = []
@@ -649,7 +725,7 @@ def sanitize_tool_schema(obj):
 def proxy():
     global PROFILES, SELECTED_PROFILE, DEBUG_MODE, WRITE_TO_LOGFILE, PATH_TO_LOGFILE, DELETE_LOG_SIZE
     global ENABLE_SMART_AMNESIA, CHAT_HISTORY_LIMIT, FORCE_AUTO_DELIVERY, FORCE_CRON_DELIVERY
-    global AUTO_DELIVERY_CHANNEL, AUTO_DELIVERY_TARGET, EXPECTED_SCRIPT_BASE_PATH, AUDIO_DELIVERY_MESSAGE
+    global AUTO_DELIVERY_CHANNEL, AUTO_DELIVERY_TARGET, EXPECTED_SCRIPT_BASE_PATH, CRITICAL_DIRECT_READ_EXTENSIONS, AUDIO_DELIVERY_MESSAGE
     global ENABLE_PROMPT_TRIMMING, TRIM_SKILLS, ENABLE_ATTENTION_FORCER, ATTENTION_FORCER_TEXT
     global ENABLE_EMERGENCY_RESCUE, ENABLE_INPUT_RESCUE, EMERGENCY_RESCUES
 
@@ -1019,6 +1095,10 @@ def proxy():
             <label for="EXPECTED_SCRIPT_BASE_PATH">EXPECTED_SCRIPT_BASE_PATH</label>
             <input type="text" id="EXPECTED_SCRIPT_BASE_PATH"/>
           </div>
+          <div class="field">
+            <label for="CRITICAL_DIRECT_READ_EXTENSIONS">CRITICAL_DIRECT_READ_EXTENSIONS (critical formats, comma separated)</label>
+            <input type="text" id="CRITICAL_DIRECT_READ_EXTENSIONS"/>
+          </div>
         </div>
         <div class="rescue-list" id="rescues" style="margin-top:12px;"></div>
         <div class="row" style="margin-top:10px;">
@@ -1167,6 +1247,7 @@ def proxy():
       byId("ENABLE_EMERGENCY_RESCUE").checked = !!cfg.ENABLE_EMERGENCY_RESCUE;
       byId("ENABLE_INPUT_RESCUE").checked = !!cfg.ENABLE_INPUT_RESCUE;
       byId("EXPECTED_SCRIPT_BASE_PATH").value = cfg.EXPECTED_SCRIPT_BASE_PATH || "";
+      byId("CRITICAL_DIRECT_READ_EXTENSIONS").value = Array.isArray(cfg.CRITICAL_DIRECT_READ_EXTENSIONS) ? cfg.CRITICAL_DIRECT_READ_EXTENSIONS.join(", ") : "";
 
       profilesWrap.innerHTML = "";
       Object.entries(cfg.PROFILES || {}).forEach(([name, data]) => addProfileCard(name, data || {}));
@@ -1220,6 +1301,7 @@ def proxy():
       setLockedState("FORCE_CRON_DELIVERY", transparentLocked, transparentReason);
       setLockedState("ENABLE_INPUT_RESCUE", transparentLocked, transparentReason);
       setLockedState("EXPECTED_SCRIPT_BASE_PATH", transparentLocked, transparentReason);
+      setLockedState("CRITICAL_DIRECT_READ_EXTENSIONS", transparentLocked, transparentReason);
       setLockedState("addRescue", transparentLocked, transparentReason);
       document.querySelectorAll(".rescue-keywords, .rescue-command, .remove-rescue").forEach((el) => {
         el.disabled = transparentLocked;
@@ -1278,6 +1360,7 @@ def proxy():
         AUTO_DELIVERY_CHANNEL: byId("AUTO_DELIVERY_CHANNEL").value,
         AUTO_DELIVERY_TARGET: byId("AUTO_DELIVERY_TARGET").value,
         EXPECTED_SCRIPT_BASE_PATH: byId("EXPECTED_SCRIPT_BASE_PATH").value,
+        CRITICAL_DIRECT_READ_EXTENSIONS: byId("CRITICAL_DIRECT_READ_EXTENSIONS").value.split(",").map(k => k.trim()).filter(Boolean),
         AUDIO_DELIVERY_MESSAGE: byId("AUDIO_DELIVERY_MESSAGE").value,
         ENABLE_PROMPT_TRIMMING: byId("ENABLE_PROMPT_TRIMMING").checked,
         TRIM_SKILLS: byId("TRIM_SKILLS").value.split(",").map(k => k.trim()).filter(Boolean),
@@ -1409,6 +1492,7 @@ setInterval(loadLogs, 1000);
                 "AUTO_DELIVERY_CHANNEL": AUTO_DELIVERY_CHANNEL,
                 "AUTO_DELIVERY_TARGET": AUTO_DELIVERY_TARGET,
                 "EXPECTED_SCRIPT_BASE_PATH": EXPECTED_SCRIPT_BASE_PATH,
+                "CRITICAL_DIRECT_READ_EXTENSIONS": CRITICAL_DIRECT_READ_EXTENSIONS,
                 "AUDIO_DELIVERY_MESSAGE": AUDIO_DELIVERY_MESSAGE,
                 "ENABLE_PROMPT_TRIMMING": ENABLE_PROMPT_TRIMMING,
                 "TRIM_SKILLS": TRIM_SKILLS,
@@ -1433,6 +1517,7 @@ setInterval(loadLogs, 1000);
         if "AUTO_DELIVERY_CHANNEL" in incoming: AUTO_DELIVERY_CHANNEL = incoming["AUTO_DELIVERY_CHANNEL"]
         if "AUTO_DELIVERY_TARGET" in incoming: AUTO_DELIVERY_TARGET = incoming["AUTO_DELIVERY_TARGET"]
         if "EXPECTED_SCRIPT_BASE_PATH" in incoming: EXPECTED_SCRIPT_BASE_PATH = incoming["EXPECTED_SCRIPT_BASE_PATH"]
+        if "CRITICAL_DIRECT_READ_EXTENSIONS" in incoming: CRITICAL_DIRECT_READ_EXTENSIONS = incoming["CRITICAL_DIRECT_READ_EXTENSIONS"]
         if "AUDIO_DELIVERY_MESSAGE" in incoming: AUDIO_DELIVERY_MESSAGE = incoming["AUDIO_DELIVERY_MESSAGE"]
         if "ENABLE_PROMPT_TRIMMING" in incoming: ENABLE_PROMPT_TRIMMING = incoming["ENABLE_PROMPT_TRIMMING"]
         if "TRIM_SKILLS" in incoming: TRIM_SKILLS = incoming["TRIM_SKILLS"]
@@ -1461,6 +1546,7 @@ setInterval(loadLogs, 1000);
                     "AUTO_DELIVERY_CHANNEL": AUTO_DELIVERY_CHANNEL,
                     "AUTO_DELIVERY_TARGET": AUTO_DELIVERY_TARGET,
                     "EXPECTED_SCRIPT_BASE_PATH": EXPECTED_SCRIPT_BASE_PATH,
+                    "CRITICAL_DIRECT_READ_EXTENSIONS": CRITICAL_DIRECT_READ_EXTENSIONS,
                     "AUDIO_DELIVERY_MESSAGE": AUDIO_DELIVERY_MESSAGE,
                     "ENABLE_PROMPT_TRIMMING": ENABLE_PROMPT_TRIMMING,
                     "TRIM_SKILLS": TRIM_SKILLS,
@@ -1504,6 +1590,7 @@ setInterval(loadLogs, 1000);
                     "AUTO_DELIVERY_CHANNEL": AUTO_DELIVERY_CHANNEL,
                     "AUTO_DELIVERY_TARGET": AUTO_DELIVERY_TARGET,
                     "EXPECTED_SCRIPT_BASE_PATH": EXPECTED_SCRIPT_BASE_PATH,
+                    "CRITICAL_DIRECT_READ_EXTENSIONS": CRITICAL_DIRECT_READ_EXTENSIONS,
                     "AUDIO_DELIVERY_MESSAGE": AUDIO_DELIVERY_MESSAGE,
                     "ENABLE_PROMPT_TRIMMING": ENABLE_PROMPT_TRIMMING,
                     "TRIM_SKILLS": TRIM_SKILLS,
@@ -1566,6 +1653,19 @@ setInterval(loadLogs, 1000);
                                 "exec",
                                 {"command": rescue["command"]}
                             )
+
+        if _pass_through_cfg != "transparent" and original_messages:
+            last_msg = original_messages[-1]
+            if last_msg.get('role') == 'tool' and last_msg.get('tool_name') == 'exec':
+                running_session_id = extract_running_exec_session_id(last_msg.get('content', ''))
+                if running_session_id:
+                    if DEBUG_MODE:
+                        print(f"[DEBUG] EXEC-PROCESS-RESCUE: Auto-polling running exec session {running_session_id}")
+                    return build_short_circuit_response(
+                        requested_model,
+                        "process",
+                        {"action": "poll", "sessionId": running_session_id, "timeout": 30000}
+                    )
 
         # --- TRANSPARENT PASS-THROUGH MODE ---
         # Raw forward with no prompt/content/tool manipulation.
@@ -1661,7 +1761,6 @@ setInterval(loadLogs, 1000);
                         message_obj["tool_calls"] = final_tool_calls
 
                     duration = time.time() - start_time
-                    print(f"[DEBUG] {'-'*60}")
                     print(f"[DEBUG] Finished in {duration:.2f}s | Tokens: {token_count} | Tokens/s: {(token_count / duration if duration > 0 else 0):.2f}")
                     print(f"[DEBUG] Chars: {len(full_content)} | Tool Calls: {len(final_tool_calls)} | Mode: TRANSPARENT_PASS_THROUGH")
                     if final_tool_calls:
@@ -1853,8 +1952,13 @@ setInterval(loadLogs, 1000);
                             for rescue in EMERGENCY_RESCUES
                         )
                         file_action_requested = (
-                            ("datei" in last_user_content_lower or ".md" in last_user_content_lower or ".txt" in last_user_content_lower) and
-                            any(token in last_user_content_lower for token in ("lies", "lese", "read", "schreib", "schreibe", "write", "edit", "bearbeit", "inhalt", "zeige", "gib mir"))
+                            (
+                                "datei" in last_user_content_lower or
+                                ".md" in last_user_content_lower or
+                                ".txt" in last_user_content_lower or
+                                mentions_critical_extension(last_user_content_lower)
+                            ) and
+                            any(token in last_user_content_lower for token in ("lies", "lese", "read", "schreib", "schreibe", "write", "edit", "bearbeit", "inhalt", "zeige", "gib mir", "lösch", "loesch", "delete", "remove", "erstell", "anleg", "create"))
                         )
                         script_action_requested = EXPECTED_SCRIPT_BASE_PATH.lower() in last_user_content_lower
                         plain_failure_text = re.search(r'(tool result:|fehler|error|failed|konnte nicht|kann nicht|entschuldigung)', full_content, re.IGNORECASE)
@@ -1964,7 +2068,6 @@ setInterval(loadLogs, 1000);
                         message_obj["tool_calls"] = final_tool_calls
 
                     duration = time.time() - start_time
-                    print(f"[DEBUG] {'-'*60}")
                     print(f"[DEBUG] Finished in {duration:.2f}s | Tokens: {token_count} | Tokens/s: {(token_count / duration if duration > 0 else 0):.2f}")
                     print(f"[DEBUG] Chars: {len(full_content)} | Tool Calls: {len(final_tool_calls)} | Mode: FULL_PASS_THROUGH")
                     if final_tool_calls:
@@ -2148,8 +2251,13 @@ setInterval(loadLogs, 1000);
                             for rescue in EMERGENCY_RESCUES
                         )
                         file_action_requested = (
-                            ("datei" in last_user_content_lower or ".md" in last_user_content_lower or ".txt" in last_user_content_lower) and
-                            any(token in last_user_content_lower for token in ("lies", "lese", "read", "schreib", "schreibe", "write", "edit", "bearbeit", "inhalt", "zeige", "gib mir"))
+                            (
+                                "datei" in last_user_content_lower or
+                                ".md" in last_user_content_lower or
+                                ".txt" in last_user_content_lower or
+                                mentions_critical_extension(last_user_content_lower)
+                            ) and
+                            any(token in last_user_content_lower for token in ("lies", "lese", "read", "schreib", "schreibe", "write", "edit", "bearbeit", "inhalt", "zeige", "gib mir", "lösch", "loesch", "delete", "remove", "erstell", "anleg", "create"))
                         )
                         script_action_requested = EXPECTED_SCRIPT_BASE_PATH.lower() in last_user_content_lower
                         plain_failure_text = re.search(r'(tool result:|fehler|error|failed|konnte nicht|kann nicht|entschuldigung)', full_content, re.IGNORECASE)
@@ -2253,7 +2361,6 @@ setInterval(loadLogs, 1000);
                         message_obj["tool_calls"] = final_tool_calls
 
                     duration = time.time() - start_time
-                    print(f"[DEBUG] {'-'*60}")
                     print(f"[DEBUG] Finished in {duration:.2f}s | Tokens: {token_count} | Tokens/s: {(token_count / duration if duration > 0 else 0):.2f}")
                     print(f"[DEBUG] Chars: {len(full_content)} | Tool Calls: {len(final_tool_calls)} | Mode: COMPAT_PASS_THROUGH")
                     if final_tool_calls:
@@ -2511,6 +2618,93 @@ setInterval(loadLogs, 1000);
                         
                         final_tool_calls.reverse()
 
+                if not final_tool_calls:
+                    last_user_content_lower = ""
+                    if original_messages and original_messages[-1].get('role') == 'user':
+                        last_user_content_lower = original_messages[-1].get('content', '').lower()
+                    matched_rescue = any(
+                        all(kw.lower() in last_user_content_lower for kw in rescue.get("keywords", []))
+                        for rescue in EMERGENCY_RESCUES
+                    ) if last_user_content_lower else False
+                    file_action_requested = (
+                        (
+                            "datei" in last_user_content_lower or
+                            ".md" in last_user_content_lower or
+                            ".txt" in last_user_content_lower or
+                            mentions_critical_extension(last_user_content_lower)
+                        ) and
+                        any(token in last_user_content_lower for token in ("lies", "lese", "read", "schreib", "schreibe", "write", "edit", "bearbeit", "inhalt", "zeige", "gib mir", "lösch", "loesch", "delete", "remove", "erstell", "anleg", "create", "konvertier", "convert", "umwandel"))
+                    ) if last_user_content_lower else False
+                    script_action_requested = EXPECTED_SCRIPT_BASE_PATH.lower() in last_user_content_lower if last_user_content_lower else False
+                    plain_failure_text = re.search(r'(tool result:|fehler|error|failed|konnte nicht|kann nicht|entschuldigung)', full_content, re.IGNORECASE)
+                    tool_action_requested = matched_rescue or file_action_requested or script_action_requested
+                    if tool_action_requested and not plain_failure_text:
+                        try:
+                            retry_payload = copy.deepcopy(openai_payload)
+                            retry_payload['tool_choice'] = "required"
+                            if DEBUG_MODE:
+                                print("[DEBUG] OFF-MODE: retrying tool request with tool_choice=required.")
+                            retry_req = requests.post(LLM_SERVER_URL, json=retry_payload, headers=LLM_REQUEST_HEADERS, stream=True, timeout=180)
+                            if retry_req.status_code == 200:
+                                retry_merged_tools = {}
+                                retry_full_content = ""
+                                for retry_line in retry_req.iter_lines():
+                                    if not retry_line:
+                                        continue
+                                    retry_line_text = retry_line.decode('utf-8').strip()
+                                    if DEBUG_MODE:
+                                        print(f"[OFF RETRY] {retry_line_text}")
+                                    if not retry_line_text.startswith("data: "):
+                                        continue
+                                    retry_data_str = retry_line_text[6:]
+                                    if retry_data_str == "[DONE]":
+                                        break
+                                    try:
+                                        retry_chunk = json.loads(retry_data_str)
+                                        retry_delta = retry_chunk['choices'][0]['delta']
+                                        if 'content' in retry_delta and retry_delta['content']:
+                                            retry_full_content += retry_delta['content']
+                                            token_count += 1
+                                        if 'tool_calls' in retry_delta:
+                                            for retry_tc in retry_delta['tool_calls']:
+                                                retry_idx = retry_tc.get('index', 0)
+                                                if retry_idx not in retry_merged_tools:
+                                                    retry_merged_tools[retry_idx] = {"name": "", "arguments": ""}
+                                                if 'function' in retry_tc:
+                                                    retry_func = retry_tc['function']
+                                                    if 'name' in retry_func and retry_func['name']:
+                                                        retry_merged_tools[retry_idx]["name"] += retry_func['name']
+                                                    if 'arguments' in retry_func and retry_func['arguments']:
+                                                        retry_merged_tools[retry_idx]["arguments"] += retry_func['arguments']
+                                    except Exception:
+                                        continue
+
+                                retry_tool_calls = []
+                                for retry_idx, retry_func in retry_merged_tools.items():
+                                    if retry_func["name"]:
+                                        retry_tool_calls.append({"function": {"name": retry_func["name"], "arguments": retry_func["arguments"]}})
+
+                                if not retry_tool_calls and retry_full_content:
+                                    retry_extracted = extract_hallucinated_tools(retry_full_content)
+                                    if retry_extracted:
+                                        for retry_obj, retry_start, retry_end in reversed(retry_extracted):
+                                            if "arguments" not in retry_obj:
+                                                continue
+                                            retry_args_str = retry_obj["arguments"] if isinstance(retry_obj["arguments"], str) else json.dumps(retry_obj["arguments"])
+                                            retry_tool_calls.append({"function": {"name": retry_obj["name"], "arguments": retry_args_str}})
+                                            retry_full_content = retry_full_content[:retry_start] + retry_full_content[retry_end:]
+                                        retry_tool_calls.reverse()
+
+                                if retry_tool_calls:
+                                    final_tool_calls = retry_tool_calls
+                                    full_content = retry_full_content.strip()
+                        except Exception:
+                            pass
+
+                    if tool_action_requested and not plain_failure_text and not final_tool_calls:
+                        if full_content:
+                            full_content = full_content + "\n\n[NOTICE: The requested file or tool action was not executed. The model returned plain text instead of a real tool call.]"
+
                 if not final_tool_calls and full_content:
                     rescued_command = None
                     match_start = -1
@@ -2622,6 +2816,24 @@ setInterval(loadLogs, 1000);
                             tc['function']['arguments'] = json.dumps(args)
                         except: pass
 
+                filtered_tool_calls = []
+                for tc in final_tool_calls:
+                    if tc.get('function', {}).get('name') == 'exec':
+                        try:
+                            exec_args = tc['function']['arguments']
+                            exec_args = json.loads(exec_args) if isinstance(exec_args, str) else exec_args
+                        except Exception:
+                            exec_args = {}
+                        missing_script_path = extract_missing_exec_script_path(exec_args.get('command'))
+                        if missing_script_path:
+                            if DEBUG_MODE:
+                                print(f"[DEBUG] EXEC-GUARD: blocked nonexistent local script path: {missing_script_path}")
+                            notice = f"[NOTICE: The requested exec action was not executed because the referenced local script path does not exist: {missing_script_path}]"
+                            full_content = (full_content + "\n\n" + notice).strip() if full_content else notice
+                            continue
+                    filtered_tool_calls.append(tc)
+                final_tool_calls = filtered_tool_calls
+
                 # --- THE LOOP BREAKER ---
                 # Only suppress Auto-Delivery if the CURRENT response already contains a 'message' call.
                 # Checking full history caused false positives (e.g., the greeting call blocked all future deliveries).
@@ -2659,7 +2871,6 @@ setInterval(loadLogs, 1000);
                         if DEBUG_MODE:
                             print("[SYSTEM] Loop-Breaker active: 'message' tool was already used. Suppressing Auto-Delivery.")
 
-            print(f"[DEBUG] {'-'*60}")
             print(f"[DEBUG] Finished in {duration:.2f}s | Tokens: {token_count} | Tokens/s: {(token_count / duration if duration > 0 else 0):.2f}")
             print(f"[DEBUG] Chars: {len(full_content)} | Tool Calls: {len(final_tool_calls)} | Mode: {'PASS_THROUGH' if PASS_THROUGH_MODE else 'OFF'}")
             
@@ -2706,11 +2917,10 @@ if __name__ == '__main__':
         kill_other_instances()
 
     print(f"==========================================")
-    print(f"ClawCut Universal Proxy (V4.10.18)")
+    print(f"ClawCut Universal Proxy (V4.10.24)")
     _profile_target = cfg.get('base_url', f"{cfg.get('ip', '?')}:{cfg.get('port', '?')}")
     print(f"PROFILE SELECTED: {SELECTED_PROFILE.upper()} ({_profile_target})")
     print(f"MODEL USED: {cfg['model_name']}")
-    print(f"PASS_THROUGH_MODE = {PASS_THROUGH_MODE}")
     _pt_label = "TRANSPARENT" if _pass_through_cfg == "transparent" else ("FULL" if FULL_PASS_THROUGH_MODE else ("COMPAT" if COMPAT_PASS_THROUGH_MODE else ("SMALL" if PASS_THROUGH_MODE else "OFF")))
     print(f"PASS_THROUGH_MODE = {_pt_label}")
     if not PASS_THROUGH_MODE and not FULL_PASS_THROUGH_MODE and not COMPAT_PASS_THROUGH_MODE and _pass_through_cfg != "transparent":
