@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-ClawCut - Universal LLM Bridge & Proxy (BETA) - v. 4.10.16
+ClawCut - Universal LLM Bridge & Proxy (BETA) - v. 4.10.18
 -------------------------------------------------------------------------------
 LICENSE: ClawCut Personal & Non-Commercial License
 Copyright (c) 2026 Niels Gerhardt
@@ -264,7 +264,7 @@ FORCE_AUTO_DELIVERY = False
 # Cron jobs lack a native chat interface, so OpenClaw's native routing won't show the text anywhere.
 FORCE_CRON_DELIVERY = False
 AUTO_DELIVERY_CHANNEL = "whatsapp"  
-AUTO_DELIVERY_TARGET = "+49123456789" 
+AUTO_DELIVERY_TARGET = "+1123456789" 
 
 
 # ==========================================
@@ -527,6 +527,52 @@ def build_short_circuit_response(requested_model, tool_name, arguments):
             "done": True
         }).encode('utf-8') + b'\n'
     return Response(short_circuit_stream(), content_type='application/x-ndjson')
+
+def rewrite_pdf_read_tool_call(tool_name, arguments):
+    parsed_args = arguments
+    try:
+        if isinstance(parsed_args, str):
+            parsed_args = json.loads(parsed_args)
+    except Exception:
+        pass
+
+    if tool_name == "read" and isinstance(parsed_args, dict):
+        pdf_path = parsed_args.get("file_path") or parsed_args.get("path") or parsed_args.get("file")
+        if isinstance(pdf_path, str) and pdf_path.lower().endswith('.pdf'):
+            safe_path = pdf_path.replace('"', '\\"')
+            return "exec", {"command": f'pdftotext "{safe_path}" - 2>/dev/null | head -100'}
+
+    return tool_name, arguments
+
+def sanitize_binary_tool_results(messages):
+    sanitized = []
+    previous_assistant = None
+
+    for m in copy.deepcopy(messages or []):
+        if m.get('role') == 'tool' and isinstance(m.get('content'), str) and m.get('content', '').startswith('%PDF-'):
+            pdf_path = None
+            if previous_assistant and previous_assistant.get('tool_calls'):
+                for tc in previous_assistant.get('tool_calls', []):
+                    if tc.get('function', {}).get('name') != 'read':
+                        continue
+                    args = tc.get('function', {}).get('arguments')
+                    try:
+                        args = json.loads(args) if isinstance(args, str) else args
+                    except Exception:
+                        pass
+                    if isinstance(args, dict):
+                        candidate = args.get("file_path") or args.get("path") or args.get("file")
+                        if isinstance(candidate, str) and candidate.lower().endswith('.pdf'):
+                            pdf_path = candidate
+                            break
+            if pdf_path:
+                m['content'] = f"Binary PDF content omitted. The previous read tool call targeted a PDF file: {pdf_path}. The read tool returned raw PDF bytes rather than extracted text. Use the exec tool to extract readable text from the PDF before summarizing it."
+
+        sanitized.append(m)
+        if m.get('role') == 'assistant':
+            previous_assistant = m
+
+    return sanitized
 
 def clean_cloud_passthrough_messages(messages):
     cleaned = []
@@ -1606,6 +1652,12 @@ setInterval(loadLogs, 1000);
 
                     message_obj = {"role": "assistant", "content": full_content}
                     if final_tool_calls:
+                        normalized_tool_calls = []
+                        for tc in final_tool_calls:
+                            func = tc.get("function", {})
+                            tool_name, tool_args = rewrite_pdf_read_tool_call(func.get("name"), func.get("arguments"))
+                            normalized_tool_calls.append({"function": {"name": tool_name, "arguments": tool_args}})
+                        final_tool_calls = normalized_tool_calls
                         message_obj["tool_calls"] = final_tool_calls
 
                     duration = time.time() - start_time
@@ -1653,6 +1705,8 @@ setInterval(loadLogs, 1000);
             passthrough_data.pop('tool_choice', None)
             passthrough_data.pop('options', None)
             passthrough_data.pop('parallel_tool_calls', None)
+            if 'messages' in passthrough_data:
+                passthrough_data['messages'] = sanitize_binary_tool_results(passthrough_data['messages'])
 
             if passthrough_data.get('messages') and passthrough_data['messages'][0].get('role') == 'system':
                 sys_msg = passthrough_data['messages'][0].get('content', '')
@@ -1901,6 +1955,12 @@ setInterval(loadLogs, 1000);
 
                     message_obj = {"role": "assistant", "content": full_content}
                     if final_tool_calls:
+                        normalized_tool_calls = []
+                        for tc in final_tool_calls:
+                            func = tc.get("function", {})
+                            tool_name, tool_args = rewrite_pdf_read_tool_call(func.get("name"), func.get("arguments"))
+                            normalized_tool_calls.append({"function": {"name": tool_name, "arguments": tool_args}})
+                        final_tool_calls = normalized_tool_calls
                         message_obj["tool_calls"] = final_tool_calls
 
                     duration = time.time() - start_time
@@ -1949,6 +2009,8 @@ setInterval(loadLogs, 1000);
             passthrough_data.pop('tool_choice', None)
             passthrough_data.pop('options', None)
             passthrough_data.pop('parallel_tool_calls', None)
+            if 'messages' in passthrough_data:
+                passthrough_data['messages'] = sanitize_binary_tool_results(passthrough_data['messages'])
 
             if passthrough_data.get('messages') and passthrough_data['messages'][0].get('role') == 'system':
                 sys_msg = passthrough_data['messages'][0].get('content', '')
@@ -2283,6 +2345,9 @@ setInterval(loadLogs, 1000);
             if not PASS_THROUGH_MODE and DEBUG_MODE and len(original_messages) > 1:
                 print(f"[DEBUG] SMART AMNESIA OFF: History within limit, preserving full.")
 
+        if _pass_through_cfg != "transparent":
+            messages = sanitize_binary_tool_results(messages)
+
         # Clean up System Prompt & Configurable Trimming for 7B Cognitive Overload
         if not PASS_THROUGH_MODE and messages and messages[0]['role'] == 'system':
             sys_msg = messages[0]['content']
@@ -2496,6 +2561,44 @@ setInterval(loadLogs, 1000);
                                         print(f"[DEBUG] BASH-RESCUE: Triggered emergency rescue to exec call: {command}")
                                     break
 
+                if not PASS_THROUGH_MODE and not final_tool_calls and not full_content and original_messages and original_messages[-1].get('role') == 'tool':
+                    try:
+                        retry_payload = copy.deepcopy(openai_payload)
+                        retry_payload.pop('tools', None)
+                        retry_payload['messages'] = copy.deepcopy(messages)
+                        retry_payload['messages'].append({
+                            "role": "user",
+                            "content": "Use the most recent tool result to answer the user's request directly. Do not call another tool. Do not reply with NO_REPLY."
+                        })
+                        if DEBUG_MODE:
+                            print("[DEBUG] TOOL-RESULT-RETRY: retrying empty post-tool response without tools.")
+                        retry_req = requests.post(LLM_SERVER_URL, json=retry_payload, headers=LLM_REQUEST_HEADERS, stream=True, timeout=180)
+                        if retry_req.status_code == 200:
+                            retry_full_content = ""
+                            for retry_line in retry_req.iter_lines():
+                                if not retry_line:
+                                    continue
+                                retry_line_text = retry_line.decode('utf-8')
+                                if DEBUG_MODE:
+                                    print(f"[TOOL-RESULT-RETRY] {retry_line_text}")
+                                if not retry_line_text.startswith("data: "):
+                                    continue
+                                retry_data_str = retry_line_text[6:].strip()
+                                if retry_data_str == "[DONE]":
+                                    break
+                                try:
+                                    retry_chunk = json.loads(retry_data_str)
+                                    retry_delta = retry_chunk['choices'][0]['delta']
+                                    if 'content' in retry_delta and retry_delta['content']:
+                                        retry_full_content += retry_delta['content']
+                                        token_count += 1
+                                except Exception:
+                                    continue
+                            if retry_full_content:
+                                full_content = retry_full_content.strip()
+                    except Exception:
+                        pass
+
                 pattern_empty_block = BT * 3 + r'(?:json)?\s*' + BT * 3
                 full_content = re.sub(pattern_empty_block, '', full_content)
                 pattern_dangling = r'\s*' + BT * 3 + r'(?:json)?\s*$'
@@ -2575,7 +2678,7 @@ setInterval(loadLogs, 1000);
             if final_tool_calls:
                 output_tool_calls = []
                 for tc in final_tool_calls:
-                    args = tc['function']['arguments']
+                    tool_name, args = rewrite_pdf_read_tool_call(tc['function']['name'], tc['function']['arguments'])
                     try: args = json.loads(args) if isinstance(args, str) else args
                     except: args = {}
                     if isinstance(args, dict):
@@ -2583,7 +2686,7 @@ setInterval(loadLogs, 1000);
                             if key in args and isinstance(args[key], str):
                                 if EXPECTED_SCRIPT_BASE_PATH.startswith('/') and args[key].startswith(EXPECTED_SCRIPT_BASE_PATH.lstrip('/')):
                                     args[key] = '/' + args[key]
-                    output_tool_calls.append({"function": {"name": tc['function']['name'], "arguments": args}})
+                    output_tool_calls.append({"function": {"name": tool_name, "arguments": args}})
                 message_obj["tool_calls"] = output_tool_calls
 
             yield json.dumps({"model": requested_model, "created_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"), "message": message_obj, "done": False}).encode('utf-8') + b'\n'
@@ -2603,7 +2706,7 @@ if __name__ == '__main__':
         kill_other_instances()
 
     print(f"==========================================")
-    print(f"ClawCut Universal Proxy (V4.10.16)")
+    print(f"ClawCut Universal Proxy (V4.10.18)")
     _profile_target = cfg.get('base_url', f"{cfg.get('ip', '?')}:{cfg.get('port', '?')}")
     print(f"PROFILE SELECTED: {SELECTED_PROFILE.upper()} ({_profile_target})")
     print(f"MODEL USED: {cfg['model_name']}")
