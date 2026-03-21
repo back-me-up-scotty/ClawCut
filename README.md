@@ -214,7 +214,7 @@ For example, one local model may work best with `false` and heavy proxy guidance
 
 | `pass_through` value | Behavior | What ClawCut does | Best used for |
 |---|---|---|---|
-| `false` | Full proxy intervention | Applies the full stabilization layer: prompt trimming, smart amnesia, attention forcer, input rescue, emergency rescue, tool recovery, critical-format guarding, retries, and output cleanup | Small local models that need strong guidance and stabilization |
+| `False` | Full proxy intervention | Applies the full stabilization layer: prompt trimming, smart amnesia, attention forcer, input rescue, emergency rescue, tool recovery, critical-format guarding, retries, and output cleanup | Small local models that need strong guidance and stabilization |
 | `"small"` | Format translation only | Keeps the translator pipeline between OpenClaw/Ollama-style input and OpenAI-style upstream requests, but skips the heavier intervention features | Stronger local models where you still want format bridging without heavy proxy behavior |
 | `"compat"` | Compatibility pass-through | Keeps the pass-through architecture, but sanitizes message history, tool protocol, binary tool results, and tool schemas for stricter endpoints | Cloud providers that are nominally OpenAI-compatible but fail on tool history, schemas, or specific fields |
 | `"full"` | Pass-through with recovery | Keeps the pass-through architecture, but still applies proxy-side cleanup and fallback logic such as prompt trimming, binary-result sanitization, tool-call recovery, retry logic, and path normalization where needed | Cloud or local models that mostly work raw, but still benefit from ClawCut recovery logic |
@@ -222,7 +222,7 @@ For example, one local model may work best with `false` and heavy proxy guidance
 
 ### Detailed Behavior
 
-#### `false`
+#### `False`
 This is the most interventionist mode. ClawCut actively modifies both the request and the response to improve reliability.
 
 Enabled features include:
